@@ -97,47 +97,56 @@ export function HomeClient({ initialStats }: { initialStats: Stats }) {
           </span>
           {ko.appName}
         </div>
-        <div className="stats">
-          <span>온라인 {stats.online}</span>
-          <span>대기 {stats.waitingInQueue}</span>
-          <span>진행 {stats.activeGames}</span>
-        </div>
       </nav>
 
       <section className="hero">
         <div className="hero-copy">
-          <p className="eyebrow">2인 대전</p>
-          <h1>{ko.headline}</h1>
-          <p className="lead">{ko.subhead}</p>
-
-          <div className="rule-line">
-            <span>30초 턴</span>
-            <span>최대 3칸</span>
-            <span>충돌 시 시작점 복귀</span>
+          <div className="metric-grid" aria-label="서비스 상태">
+            <div className="metric-card">
+              <span>접속자</span>
+              <strong>{stats.online}</strong>
+            </div>
+            <div className="metric-card">
+              <span>큐 대기</span>
+              <strong>{stats.waitingInQueue}</strong>
+            </div>
+            <div className="metric-card">
+              <span>진행 게임</span>
+              <strong>{stats.activeGames}</strong>
+            </div>
           </div>
         </div>
 
         <div className="entry-panel">
           <div className="actions">
-            <button className="button primary-action" disabled={busy} onClick={autoMatch}>
+            <button className={`button primary-action ${queued ? "is-queueing" : ""}`} disabled={busy} onClick={autoMatch}>
               <Radar size={22} />
-              {ko.autoMatch}
+              <span>{queued ? "매칭 대기 중" : ko.autoMatch}</span>
+              {queued ? (
+                <span className="queue-dots" aria-hidden="true">
+                  <span />
+                  <span />
+                  <span />
+                </span>
+              ) : null}
             </button>
-            <button className="button secondary" disabled={busy} onClick={createInvite}>
-              <DoorOpen size={18} />
-              {ko.createRoom}
-            </button>
-            <div className="input-row">
-              <input
-                className="input"
-                maxLength={5}
-                placeholder={ko.roomCode}
-                value={code}
-                onChange={(event) => setCode(event.target.value.toUpperCase())}
-              />
-              <button className="button" disabled={busy || !code.trim()} onClick={joinInvite}>
-                {ko.joinRoom}
+            <div className="invite-row">
+              <button className="button secondary" disabled={busy} onClick={createInvite}>
+                <DoorOpen size={18} />
+                {ko.createRoom}
               </button>
+              <div className="input-row">
+                <input
+                  className="input"
+                  maxLength={5}
+                  placeholder={ko.roomCode}
+                  value={code}
+                  onChange={(event) => setCode(event.target.value.toUpperCase())}
+                />
+                <button className="button" disabled={busy || !code.trim()} onClick={joinInvite}>
+                  {ko.joinRoom}
+                </button>
+              </div>
             </div>
           </div>
           {notice ? <p className="notice strong-notice">{notice}</p> : null}

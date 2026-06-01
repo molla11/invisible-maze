@@ -83,6 +83,11 @@ function teamName(slot?: PlayerSlot) {
   return "-";
 }
 
+function resultText(game: PublicGame) {
+  if (game.status !== "finished") return "";
+  return game.winner === game.viewerSlot ? "게임 승리" : "게임 패배";
+}
+
 export function GameClient({ gameId }: { gameId: string }) {
   const [game, setGame] = useState<PublicGame | null>(null);
   const [error, setError] = useState("");
@@ -171,13 +176,9 @@ export function GameClient({ gameId }: { gameId: string }) {
   return (
     <main className="shell">
       <nav className="topbar">
-        <Link className="brand" href="/">
-          <span className="brand-mark">IM</span>
+        <Link className="plain-home-link" href="/">
           {ko.appName}
         </Link>
-        <div className="stats">
-          <span>{teamName(game.viewerSlot)} 팀</span>
-        </div>
       </nav>
 
       <section className="game-shell">
@@ -220,6 +221,7 @@ export function GameClient({ gameId }: { gameId: string }) {
               {(["A", "B"] as PlayerSlot[]).map((slot) => (
                 <div aria-label={`${slot} 플레이어`} className={`piece ${slot.toLowerCase()}`} key={slot} style={toBoard(game.players[slot].position)}>
                   <ChessPawn className="pawn-mark" size={42} strokeWidth={2.35} aria-hidden="true" />
+                  {slot === game.viewerSlot ? <span className="me-label">me</span> : null}
                 </div>
               ))}
             </div>
@@ -227,9 +229,13 @@ export function GameClient({ gameId }: { gameId: string }) {
         </div>
 
         <aside className="side-panel">
-          <div className={`turn-card ${game.currentTurn === "A" ? "red" : "blue"}`}>
+          <div
+            className={`turn-card ${
+              game.status === "finished" ? (game.winner === game.viewerSlot ? "win" : "loss") : game.currentTurn === "A" ? "red" : "blue"
+            }`}
+          >
             <span>{game.status === "finished" ? "게임 종료" : canAct ? "움직일 차례" : "상대 차례"}</span>
-            <strong>{game.status === "finished" ? `${teamName(game.winner)} 승리` : teamName(game.currentTurn)}</strong>
+            <strong>{game.status === "finished" ? resultText(game) : teamName(game.currentTurn)}</strong>
           </div>
 
           <div className="round-stats">
