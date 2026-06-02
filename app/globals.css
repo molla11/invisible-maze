@@ -394,11 +394,11 @@ button:disabled {
   color: var(--red);
   background: transparent;
   border: 0;
-  transform: translate(-50%, -50%);
+  transform: translate(calc(-50% + var(--piece-offset-x, 0%)), -50%);
   filter:
     drop-shadow(0 1px 0 rgb(255 253 247 / 92%))
     drop-shadow(0 6px 8px rgb(24 26 31 / 24%));
-  transition: left 160ms ease, top 160ms ease;
+  transition: left 160ms ease, top 160ms ease, transform 160ms ease;
 }
 
 .goal.a {

@@ -173,12 +173,27 @@ export async function heartbeatGame(gameId: string) {
 
 export function sanitizeGame(game: GameState, viewerId: string) {
   const slot: PlayerSlot | undefined = game.players.A.id === viewerId ? "A" : game.players.B.id === viewerId ? "B" : undefined;
+  const publicPlayer = (player: GameState["players"][PlayerSlot]) => ({
+    position: player.position,
+    goal: player.goal,
+    missedTurns: player.missedTurns
+  });
+
   return {
-    ...game,
+    id: game.id,
+    status: game.status,
+    players: {
+      A: publicPlayer(game.players.A),
+      B: publicPlayer(game.players.B)
+    },
+    currentTurn: game.currentTurn,
+    turnStepsUsed: game.turnStepsUsed,
+    turnDeadlineAt: game.turnDeadlineAt,
+    winner: game.winner,
+    winReason: game.winReason,
+    revealedWalls: game.revealedWalls,
+    events: game.events.slice(-20),
     viewerSlot: slot,
-    maze: {
-      ...game.maze,
-      walls: undefined
-    }
+    updatedAt: game.updatedAt
   };
 }

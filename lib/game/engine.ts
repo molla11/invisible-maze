@@ -84,7 +84,11 @@ function finish(game: GameState, winner: PlayerSlot, reason: string, at: number)
 export function advanceClock(game: GameState, at = Date.now()): GameState {
   if (game.status !== "playing") return game;
 
-  game.revealedWalls = game.revealedWalls.filter((wall) => wall.expiresAt > at);
+  const activeWalls = game.revealedWalls.filter((wall) => wall.expiresAt > at);
+  if (activeWalls.length !== game.revealedWalls.length) {
+    game.revealedWalls = activeWalls;
+    game.updatedAt = at;
+  }
 
   for (const slot of ["A", "B"] as PlayerSlot[]) {
     if (at - game.players[slot].connectedAt > DISCONNECT_FORFEIT_MS) {
@@ -162,7 +166,6 @@ export function heartbeat(game: GameState, playerId: string, at = Date.now()): G
   const slot = playerSlotById(game, playerId);
   if (slot) {
     game.players[slot].connectedAt = at;
-    game.updatedAt = at;
   }
   return game;
 }

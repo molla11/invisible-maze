@@ -22,3 +22,7 @@
 - Adjusted revealed wall rendering so the marker is a black line centered on the boundary between cells rather than sitting inside one cell.
 - Increased generated maze wall density from 28% to 42% and raised generation retries to preserve valid equal-distance boards.
 - Cleaned up the lobby and game UI: removed the marketing-style background and rule cards, made matchmaking the dominant action, grouped secondary invite controls, simplified copy, and reduced the game sidebar to turn state, remaining moves, timer, status, and compact history.
+- Reduced game-state network traffic by adding an SSE game events stream, switching the game client away from one-second polling, shrinking public game payloads, and adding ETag/304 support for the existing game-state endpoint.
+- Updated heartbeat/version handling so connection keepalive updates do not force unchanged game states to be resent.
+- Adjusted overlapping player rendering so Red and Blue pieces display side by side horizontally when both players occupy the same board cell.
+- Verified the networking and overlap rendering changes with `pnpm lint`, `pnpm typecheck`, and `pnpm test`.

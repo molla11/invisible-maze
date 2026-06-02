@@ -2,6 +2,7 @@
 
 import { ChessPawn, Flag } from "lucide-react";
 import Link from "next/link";
+import type { CSSProperties } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Direction, GameEvent, PlayerSlot, Point } from "@/lib/game/types";
 import { ko } from "@/lib/i18n/ko";
@@ -18,6 +19,7 @@ type PublicGame = {
   revealedWalls: Array<{ key: string; expiresAt: number }>;
   events: GameEvent[];
   viewerSlot?: PlayerSlot;
+  updatedAt: number;
 };
 
 function toBoard(point: Point) {
@@ -44,6 +46,13 @@ function directionTo(from: Point, to: Point): Direction | undefined {
 
 function samePoint(a: Point, b: Point) {
   return a.x === b.x && a.y === b.y;
+}
+
+function pieceStyle(point: Point, slot: PlayerSlot, overlapped: boolean): CSSProperties {
+  return {
+    ...toBoard(point),
+    "--piece-offset-x": overlapped ? (slot === "A" ? "-18%" : "18%") : "0%"
+  } as CSSProperties;
 }
 
 function wallStyle(key: string) {
@@ -94,25 +103,38 @@ export function GameClient({ gameId }: { gameId: string }) {
   const [now, setNow] = useState(Date.now());
   const [pending, setPending] = useState(false);
 
-  const fetchGame = useCallback(async () => {
-    const response = await fetch(`/api/game/${gameId}`, { cache: "no-store" });
-    if (response.ok) setGame(await response.json());
-  }, [gameId]);
-
   useEffect(() => {
-    fetchGame();
-    const poll = setInterval(fetchGame, 1000);
+    const source = new EventSource(`/api/game/${gameId}/events`);
     const clock = setInterval(() => setNow(Date.now()), 250);
+
+    source.onmessage = (event) => {
+      const data = JSON.parse(event.data) as PublicGame | { error: string };
+      if ("error" in data && typeof data.error === "string") {
+        setError(data.error ?? "게임 상태를 불러오지 못했습니다.");
+        source.close();
+        return;
+      }
+
+      const nextGame = data as PublicGame;
+      setGame(nextGame);
+      if (nextGame.status === "finished") source.close();
+    };
+
+    source.onerror = () => {
+      setError("게임 상태 연결이 불안정합니다.");
+    };
+
     return () => {
-      clearInterval(poll);
+      source.close();
       clearInterval(clock);
     };
-  }, [fetchGame]);
+  }, [gameId]);
 
   const canAct = game?.status === "playing" && game.viewerSlot === game.currentTurn;
   const secondsLeft = Math.max(0, Math.ceil(((game?.turnDeadlineAt ?? now) - now) / 1000));
   const viewerPosition = game?.viewerSlot ? game.players[game.viewerSlot].position : undefined;
   const stepsLeft = Math.max(0, 3 - (game?.turnStepsUsed ?? 0));
+  const playersOverlap = game ? samePoint(game.players.A.position, game.players.B.position) : false;
 
   const moveToCell = useCallback(
     async (point: Point) => {
@@ -219,7 +241,12 @@ export function GameClient({ gameId }: { gameId: string }) {
               ))}
 
               {(["A", "B"] as PlayerSlot[]).map((slot) => (
-                <div aria-label={`${slot} 플레이어`} className={`piece ${slot.toLowerCase()}`} key={slot} style={toBoard(game.players[slot].position)}>
+                <div
+                  aria-label={`${slot} 플레이어`}
+                  className={`piece ${slot.toLowerCase()}`}
+                  key={slot}
+                  style={pieceStyle(game.players[slot].position, slot, playersOverlap)}
+                >
                   <ChessPawn className="pawn-mark" size={42} strokeWidth={2.35} aria-hidden="true" />
                   {slot === game.viewerSlot ? <span className="me-label">me</span> : null}
                 </div>
