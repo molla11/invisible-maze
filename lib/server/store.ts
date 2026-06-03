@@ -567,6 +567,19 @@ export function sanitizeGame(game: GameState, viewerId: string) {
     goal: player.goal,
     missedTurns: player.missedTurns
   });
+  const wallHits =
+    game.status === "finished"
+      ? game.events.reduce<Record<string, PlayerSlot[]>>((hits, event) => {
+          if (event.type !== "wall_hit") return hits;
+          const wall = event.payload.wall;
+          const player = event.payload.player;
+          if (typeof wall !== "string" || (player !== "A" && player !== "B")) return hits;
+          const slots = hits[wall] ?? [];
+          if (!slots.includes(player)) slots.push(player);
+          hits[wall] = slots;
+          return hits;
+        }, {})
+      : undefined;
 
   return {
     id: game.id,
@@ -586,6 +599,8 @@ export function sanitizeGame(game: GameState, viewerId: string) {
     rematch: game.rematch,
     emotes: game.emotes,
     revealedWalls: game.revealedWalls,
+    mazeWalls: game.status === "finished" ? game.maze.walls : undefined,
+    wallHits,
     events: game.events.slice(-20),
     viewerSlot: slot,
     updatedAt: game.updatedAt

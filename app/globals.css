@@ -729,6 +729,25 @@ button:disabled {
   box-shadow: 0 0 0 1px rgb(255 253 247 / 62%);
 }
 
+.maze-wall {
+  z-index: 3;
+  background: var(--ink);
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px rgb(255 253 247 / 74%);
+}
+
+.maze-wall.a {
+  background: var(--red);
+}
+
+.maze-wall.b {
+  background: var(--blue);
+}
+
+.maze-wall.both {
+  background: #7c3fb4;
+}
+
 @keyframes coin-flip {
   0% {
     transform: rotateY(0deg) translateY(0) scale(1);

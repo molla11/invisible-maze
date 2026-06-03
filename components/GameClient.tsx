@@ -52,6 +52,8 @@ type PublicGame = {
   };
   emotes: Record<PlayerSlot, { sentAt: number[]; blockedUntil?: number }>;
   revealedWalls: Array<{ key: string; expiresAt: number }>;
+  mazeWalls?: string[];
+  wallHits?: Record<string, PlayerSlot[]>;
   events: GameEvent[];
   viewerSlot?: PlayerSlot;
   updatedAt: number;
@@ -113,6 +115,14 @@ function wallStyle(key: string) {
     width: `${cell}%`,
     height: thickness
   };
+}
+
+function finishedWallClass(game: PublicGame, key: string) {
+  const hits = game.wallHits?.[key] ?? [];
+  if (hits.includes("A") && hits.includes("B")) return "both";
+  if (hits.includes("A")) return "a";
+  if (hits.includes("B")) return "b";
+  return "unknown";
 }
 
 function eventText(event: GameEvent) {
@@ -493,9 +503,11 @@ export function GameClient({ gameId }: { gameId: string }) {
                 )
               )}
 
-              {game.revealedWalls.map((wall) => (
-                <div className="wall-flash" key={wall.key} style={wallStyle(wall.key)} />
-              ))}
+              {game.status === "finished" && game.mazeWalls
+                ? game.mazeWalls.map((key) => (
+                    <div className={`maze-wall ${finishedWallClass(game, key)}`} key={key} style={wallStyle(key)} />
+                  ))
+                : game.revealedWalls.map((wall) => <div className="wall-flash" key={wall.key} style={wallStyle(wall.key)} />)}
 
               {(["A", "B"] as PlayerSlot[]).map((slot) => (
                 <div
