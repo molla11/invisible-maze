@@ -2,7 +2,7 @@
 
 import { Copy, DoorOpen, Eye, EyeOff, Radar, Swords } from "lucide-react";
 import Script from "next/script";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ko } from "@/lib/i18n/ko";
 
 declare global {
@@ -36,19 +36,20 @@ export function HomeClient({ initialStats }: { initialStats: Stats }) {
   const [inviteCodeCreated, setInviteCodeCreated] = useState(false);
   const [codeMasked, setCodeMasked] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState("");
+  const [turnstileVerified, setTurnstileVerified] = useState(false);
   const turnstileContainerRef = useRef<HTMLDivElement | null>(null);
   const turnstileWidgetRef = useRef<string | undefined>(undefined);
   const actionInFlight = useRef(false);
 
-  function renderTurnstile() {
-    if (!turnstileSiteKey || !turnstileContainerRef.current || turnstileWidgetRef.current) return;
+  const renderTurnstile = useCallback(() => {
+    if (!turnstileSiteKey || turnstileVerified || !turnstileContainerRef.current || turnstileWidgetRef.current) return;
     turnstileWidgetRef.current = window.turnstile?.render(turnstileContainerRef.current, {
       sitekey: turnstileSiteKey,
       callback: setTurnstileToken,
       "expired-callback": () => setTurnstileToken(""),
       "error-callback": () => setTurnstileToken("")
     });
-  }
+  }, [turnstileVerified]);
 
   function resetTurnstile() {
     setTurnstileToken("");
@@ -56,7 +57,7 @@ export function HomeClient({ initialStats }: { initialStats: Stats }) {
   }
 
   function verifiedBody() {
-    if (!turnstileSiteKey) return JSON.stringify({});
+    if (!turnstileSiteKey || turnstileVerified) return JSON.stringify({});
     if (!turnstileToken) {
       setNotice("보안 확인을 완료해 주세요.");
       throw new Error("turnstile_token_required");
@@ -72,6 +73,10 @@ export function HomeClient({ initialStats }: { initialStats: Stats }) {
     }, 3000);
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    renderTurnstile();
+  }, [renderTurnstile]);
 
   useEffect(() => {
     if (!queued) return;
@@ -110,11 +115,13 @@ export function HomeClient({ initialStats }: { initialStats: Stats }) {
         body: verifiedBody()
       });
       const data = await response.json();
-      resetTurnstile();
       if (!response.ok) {
         setNotice(data.error === "turnstile_failed" ? "보안 확인에 실패했습니다." : "매칭을 시작하지 못했습니다.");
+        if (data.error === "turnstile_failed") resetTurnstile();
         return;
       }
+      setTurnstileVerified(true);
+      setTurnstileToken("");
       if (data.status === "matched") {
         location.href = `/game/${data.gameId}`;
         return;
@@ -164,11 +171,13 @@ export function HomeClient({ initialStats }: { initialStats: Stats }) {
         body: verifiedBody()
       });
       const data = await response.json();
-      resetTurnstile();
       if (!response.ok) {
         setNotice(data.error === "turnstile_failed" ? "보안 확인에 실패했습니다." : "방을 만들지 못했습니다.");
+        if (data.error === "turnstile_failed") resetTurnstile();
         return;
       }
+      setTurnstileVerified(true);
+      setTurnstileToken("");
       if (data.code) {
         setCode(data.code);
         setInviteCodeCreated(true);
@@ -209,10 +218,15 @@ export function HomeClient({ initialStats }: { initialStats: Stats }) {
         body: verifiedBody()
       });
       const data = await response.json();
-      resetTurnstile();
       if (data.gameId) {
+        setTurnstileVerified(true);
+        setTurnstileToken("");
         location.href = `/game/${data.gameId}`;
         return;
+      }
+      if (response.ok) {
+        setTurnstileVerified(true);
+        setTurnstileToken("");
       }
       setNotice(
         data.error === "turnstile_failed"
@@ -221,6 +235,7 @@ export function HomeClient({ initialStats }: { initialStats: Stats }) {
             ? "방 코드를 찾지 못했습니다."
             : "입장할 수 없는 방입니다."
       );
+      if (data.error === "turnstile_failed") resetTurnstile();
     } catch (error) {
       if (error instanceof Error && error.message === "turnstile_token_required") return;
       setNotice("입장할 수 없는 방입니다.");
@@ -318,7 +333,7 @@ export function HomeClient({ initialStats }: { initialStats: Stats }) {
               </div>
             </div>
           </div>
-          {turnstileSiteKey ? <div ref={turnstileContainerRef} className="turnstile-box" /> : null}
+          {turnstileSiteKey && !turnstileVerified ? <div ref={turnstileContainerRef} className="turnstile-box" /> : null}
           {notice ? <p className="notice strong-notice">{notice}</p> : null}
           <div className="compact-stats" aria-label="서비스 상태">
             <div>
