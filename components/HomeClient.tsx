@@ -8,7 +8,6 @@ import { ko } from "@/lib/i18n/ko";
 declare global {
   interface Window {
     turnstile?: {
-      ready(callback: () => void): void;
       render(container: HTMLElement, options: {
         sitekey: string;
         callback(token: string): void;
@@ -43,14 +42,11 @@ export function HomeClient({ initialStats }: { initialStats: Stats }) {
 
   function renderTurnstile() {
     if (!turnstileSiteKey || !turnstileContainerRef.current || turnstileWidgetRef.current) return;
-    window.turnstile?.ready(() => {
-      if (!turnstileSiteKey || !turnstileContainerRef.current || turnstileWidgetRef.current) return;
-      turnstileWidgetRef.current = window.turnstile?.render(turnstileContainerRef.current, {
-        sitekey: turnstileSiteKey,
-        callback: setTurnstileToken,
-        "expired-callback": () => setTurnstileToken(""),
-        "error-callback": () => setTurnstileToken("")
-      });
+    turnstileWidgetRef.current = window.turnstile?.render(turnstileContainerRef.current, {
+      sitekey: turnstileSiteKey,
+      callback: setTurnstileToken,
+      "expired-callback": () => setTurnstileToken(""),
+      "error-callback": () => setTurnstileToken("")
     });
   }
 
