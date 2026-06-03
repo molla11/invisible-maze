@@ -1,6 +1,6 @@
 import { HomeClient } from "@/components/HomeClient";
 import { publicStats } from "@/lib/server/store";
 
-export default function HomePage() {
-  return <HomeClient initialStats={publicStats()} />;
+export default async function HomePage() {
+  return <HomeClient initialStats={await publicStats()} />;
 }
