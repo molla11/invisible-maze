@@ -528,7 +528,8 @@ button:disabled {
 
 .goal,
 .piece,
-.wall-flash {
+.wall-flash,
+.maze-wall {
   position: absolute;
   pointer-events: none;
 }
