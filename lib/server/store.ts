@@ -430,6 +430,31 @@ export async function cancelQueue() {
   return { session, status: "cancelled" as const };
 }
 
+export async function getMatchStatus() {
+  const admin = supabaseAdmin();
+  if (admin) {
+    const session = await dbRequireSession(admin);
+    const activeGameId = await dbFindActiveGameForPlayer(admin, session.id);
+    if (activeGameId) {
+      await admin.from("match_queue").delete().eq("profile_id", session.id);
+      return { session, status: "matched" as const, gameId: activeGameId };
+    }
+
+    const { data, error } = await admin
+      .from("match_queue")
+      .select("id")
+      .eq("profile_id", session.id)
+      .maybeSingle<{ id: string }>();
+    if (error) throw new Error(error.message);
+    return { session, status: data ? ("queued" as const) : ("idle" as const) };
+  }
+
+  const session = await requireSession();
+  const activeGame = findActiveGameForPlayer(session.id);
+  if (activeGame) return { session, status: "matched" as const, gameId: activeGame.id };
+  return { session, status: store.queue?.playerId === session.id ? ("queued" as const) : ("idle" as const) };
+}
+
 export async function getGame(gameIdValue: string) {
   const admin = supabaseAdmin();
   if (admin) {

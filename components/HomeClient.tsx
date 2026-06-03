@@ -1,14 +1,32 @@
 "use client";
 
 import { Copy, DoorOpen, Eye, EyeOff, Radar, Swords } from "lucide-react";
+import Script from "next/script";
 import { useEffect, useRef, useState } from "react";
 import { ko } from "@/lib/i18n/ko";
+
+declare global {
+  interface Window {
+    turnstile?: {
+      ready(callback: () => void): void;
+      render(container: HTMLElement, options: {
+        sitekey: string;
+        callback(token: string): void;
+        "expired-callback"(): void;
+        "error-callback"(): void;
+      }): string;
+      reset(widgetId?: string): void;
+    };
+  }
+}
 
 type Stats = {
   online: number;
   waitingInQueue: number;
   activeGames: number;
 };
+
+const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
 export function HomeClient({ initialStats }: { initialStats: Stats }) {
   const [stats, setStats] = useState(initialStats);
@@ -18,7 +36,37 @@ export function HomeClient({ initialStats }: { initialStats: Stats }) {
   const [queued, setQueued] = useState(false);
   const [inviteCodeCreated, setInviteCodeCreated] = useState(false);
   const [codeMasked, setCodeMasked] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const turnstileContainerRef = useRef<HTMLDivElement | null>(null);
+  const turnstileWidgetRef = useRef<string | undefined>(undefined);
   const actionInFlight = useRef(false);
+
+  function renderTurnstile() {
+    if (!turnstileSiteKey || !turnstileContainerRef.current || turnstileWidgetRef.current) return;
+    window.turnstile?.ready(() => {
+      if (!turnstileSiteKey || !turnstileContainerRef.current || turnstileWidgetRef.current) return;
+      turnstileWidgetRef.current = window.turnstile?.render(turnstileContainerRef.current, {
+        sitekey: turnstileSiteKey,
+        callback: setTurnstileToken,
+        "expired-callback": () => setTurnstileToken(""),
+        "error-callback": () => setTurnstileToken("")
+      });
+    });
+  }
+
+  function resetTurnstile() {
+    setTurnstileToken("");
+    if (turnstileWidgetRef.current) window.turnstile?.reset(turnstileWidgetRef.current);
+  }
+
+  function verifiedBody() {
+    if (!turnstileSiteKey) return JSON.stringify({});
+    if (!turnstileToken) {
+      setNotice("보안 확인을 완료해 주세요.");
+      throw new Error("turnstile_token_required");
+    }
+    return JSON.stringify({ turnstileToken });
+  }
 
   useEffect(() => {
     fetch("/api/session", { method: "POST" }).catch(() => undefined);
@@ -32,7 +80,7 @@ export function HomeClient({ initialStats }: { initialStats: Stats }) {
   useEffect(() => {
     if (!queued) return;
     const timer = setInterval(async () => {
-      const response = await fetch("/api/match/join", { method: "POST", body: JSON.stringify({}) });
+      const response = await fetch("/api/match/status");
       const data = await response.json();
       if (data.status === "matched") location.href = `/game/${data.gameId}`;
     }, 2000);
@@ -60,15 +108,25 @@ export function HomeClient({ initialStats }: { initialStats: Stats }) {
     setCodeMasked(false);
     setNotice("매칭 대기 중입니다.");
     try {
-      const response = await fetch("/api/match/join", { method: "POST", body: JSON.stringify({}) });
+      const response = await fetch("/api/match/join", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: verifiedBody()
+      });
       const data = await response.json();
+      resetTurnstile();
+      if (!response.ok) {
+        setNotice(data.error === "turnstile_failed" ? "보안 확인에 실패했습니다." : "매칭을 시작하지 못했습니다.");
+        return;
+      }
       if (data.status === "matched") {
         location.href = `/game/${data.gameId}`;
         return;
       }
       setNotice(ko.queueWaiting);
       setQueued(true);
-    } catch {
+    } catch (error) {
+      if (error instanceof Error && error.message === "turnstile_token_required") return;
       setNotice("매칭을 시작하지 못했습니다.");
     } finally {
       setBusy(false);
@@ -104,8 +162,17 @@ export function HomeClient({ initialStats }: { initialStats: Stats }) {
     setInviteCodeCreated(false);
     setCodeMasked(false);
     try {
-      const response = await fetch("/api/room", { method: "POST", body: JSON.stringify({}) });
+      const response = await fetch("/api/room", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: verifiedBody()
+      });
       const data = await response.json();
+      resetTurnstile();
+      if (!response.ok) {
+        setNotice(data.error === "turnstile_failed" ? "보안 확인에 실패했습니다." : "방을 만들지 못했습니다.");
+        return;
+      }
       if (data.code) {
         setCode(data.code);
         setInviteCodeCreated(true);
@@ -114,7 +181,8 @@ export function HomeClient({ initialStats }: { initialStats: Stats }) {
       } else {
         setNotice("방을 만들지 못했습니다.");
       }
-    } catch {
+    } catch (error) {
+      if (error instanceof Error && error.message === "turnstile_token_required") return;
       setNotice("방을 만들지 못했습니다.");
     } finally {
       setBusy(false);
@@ -139,14 +207,26 @@ export function HomeClient({ initialStats }: { initialStats: Stats }) {
     actionInFlight.current = true;
     setBusy(true);
     try {
-      const response = await fetch(`/api/room/${normalized}`, { method: "POST", body: JSON.stringify({}) });
+      const response = await fetch(`/api/room/${normalized}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: verifiedBody()
+      });
       const data = await response.json();
+      resetTurnstile();
       if (data.gameId) {
         location.href = `/game/${data.gameId}`;
         return;
       }
-      setNotice(data.error === "room_not_found" ? "방 코드를 찾지 못했습니다." : "입장할 수 없는 방입니다.");
-    } catch {
+      setNotice(
+        data.error === "turnstile_failed"
+          ? "보안 확인에 실패했습니다."
+          : data.error === "room_not_found"
+            ? "방 코드를 찾지 못했습니다."
+            : "입장할 수 없는 방입니다."
+      );
+    } catch (error) {
+      if (error instanceof Error && error.message === "turnstile_token_required") return;
       setNotice("입장할 수 없는 방입니다.");
     } finally {
       setBusy(false);
@@ -158,6 +238,13 @@ export function HomeClient({ initialStats }: { initialStats: Stats }) {
 
   return (
     <main className="shell">
+      {turnstileSiteKey ? (
+        <Script
+          src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
+          strategy="afterInteractive"
+          onLoad={renderTurnstile}
+        />
+      ) : null}
       <nav className="topbar">
         <div className="brand">
           <span className="brand-mark">
@@ -235,6 +322,7 @@ export function HomeClient({ initialStats }: { initialStats: Stats }) {
               </div>
             </div>
           </div>
+          {turnstileSiteKey ? <div ref={turnstileContainerRef} className="turnstile-box" /> : null}
           {notice ? <p className="notice strong-notice">{notice}</p> : null}
           <div className="compact-stats" aria-label="서비스 상태">
             <div>

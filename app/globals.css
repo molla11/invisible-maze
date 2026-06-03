@@ -379,6 +379,14 @@ button:disabled {
   font-size: 14px;
 }
 
+.turnstile-box {
+  display: flex;
+  min-height: 65px;
+  align-items: center;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
 .strong-notice {
   color: var(--ink);
   font-weight: 740;
