@@ -446,6 +446,8 @@ export function GameClient({ gameId }: { gameId: string }) {
   const recentEmoteCount = viewerEmotes?.sentAt.filter((sentAt) => now - sentAt < EMOTE_WINDOW_MS).length ?? 0;
   const emoteBlocked = Boolean(viewerEmotes?.blockedUntil && now < viewerEmotes.blockedUntil);
   const emotesDisabled = emotePending !== null || emoteBlocked || recentEmoteCount >= EMOTE_LIMIT;
+  const statusNotice =
+    error || (isWaitingPhase ? "상대가 게임 화면에 들어오면 시작합니다." : isCoinPhase ? (coinRevealed ? "게임 시작을 준비하세요." : "선공을 결정하고 있습니다.") : "");
 
   if (!game) {
     return (
@@ -669,7 +671,7 @@ export function GameClient({ gameId }: { gameId: string }) {
             </div>
           </div>
 
-          <p className="notice">{error || (isWaitingPhase ? "상대가 게임 화면에 들어오면 시작합니다." : isCoinPhase ? (coinRevealed ? "게임 시작을 준비하세요." : "선공을 결정하고 있습니다.") : "")}</p>
+          {statusNotice ? <p className="notice">{statusNotice}</p> : null}
 
           {game.status !== "finished" ? (
             <button className="button danger full-width" onClick={surrenderGame} type="button">
