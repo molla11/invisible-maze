@@ -97,9 +97,9 @@ export type GameState = {
 };
 
 export const startFor = (slot: PlayerSlot): Point =>
-  slot === "A" ? { x: 0, y: 0 } : { x: BOARD_SIZE - 1, y: 0 };
+  slot === "A" ? { x: BOARD_SIZE - 1, y: BOARD_SIZE - 1 } : { x: BOARD_SIZE - 1, y: 0 };
 
 export const goalFor = (slot: PlayerSlot): Point =>
-  slot === "A" ? { x: BOARD_SIZE - 1, y: BOARD_SIZE - 1 } : { x: 0, y: BOARD_SIZE - 1 };
+  slot === "A" ? { x: 0, y: 0 } : { x: 0, y: BOARD_SIZE - 1 };
 
 export const oppositeSlot = (slot: PlayerSlot): PlayerSlot => (slot === "A" ? "B" : "A");

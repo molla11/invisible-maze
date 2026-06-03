@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:maze-pool": "node scripts/build-maze-pool.mjs 10000 lib/game/maze-pool.json",
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",

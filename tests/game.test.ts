@@ -1,7 +1,26 @@
 import { describe, expect, it } from "vitest";
 import { advanceClock, createGame, heartbeat, sendEmote, submitSteps, surrender } from "@/lib/game/engine";
-import { generateMaze, hasWall, movePoint, shortestPath } from "@/lib/game/maze";
-import { COIN_TOSS_MS, EMOTE_BLOCK_MS, EMOTE_LIMIT, EMOTE_WINDOW_MS, MATCH_READY_MS, REMATCH_WINDOW_MS, START_COUNTDOWN_MS, TURN_SECONDS } from "@/lib/game/types";
+import { directionsList, generateMaze, hasWall, movePoint, shortestPath } from "@/lib/game/maze";
+import { COIN_TOSS_MS, EMOTE_BLOCK_MS, EMOTE_LIMIT, EMOTE_WINDOW_MS, MATCH_READY_MS, REMATCH_WINDOW_MS, START_COUNTDOWN_MS, TURN_SECONDS, goalFor, startFor, type Maze, type Point } from "@/lib/game/types";
+
+function reachableCellCount(maze: Maze, start: Point) {
+  const queue = [start];
+  const seen = new Set([`${start.x},${start.y}`]);
+
+  for (let head = 0; head < queue.length; head += 1) {
+    const current = queue[head];
+    for (const direction of directionsList) {
+      if (hasWall(maze, current, direction)) continue;
+      const next = movePoint(current, direction);
+      const key = `${next.x},${next.y}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      queue.push(next);
+    }
+  }
+
+  return seen.size;
+}
 
 function createPlayingGame(seed = 1) {
   const game = createGame("game", "a", "b", undefined, seed);
@@ -18,11 +37,13 @@ describe("maze generation", () => {
   it("creates reachable goals with equal shortest paths of 14 or 16", () => {
     for (let seed = 1; seed <= 40; seed += 1) {
       const maze = generateMaze(seed);
-      const aDistance = shortestPath(maze, { x: 0, y: 0 }, { x: 7, y: 7 });
-      const bDistance = shortestPath(maze, { x: 7, y: 0 }, { x: 0, y: 7 });
+      const aDistance = shortestPath(maze, startFor("A"), goalFor("A"));
+      const bDistance = shortestPath(maze, startFor("B"), goalFor("B"));
 
+      expect(maze.walls).toHaveLength(28);
       expect(aDistance).toBe(bDistance);
       expect([14, 16]).toContain(aDistance);
+      expect(reachableCellCount(maze, startFor("A"))).toBe(maze.size * maze.size);
     }
   });
 
@@ -95,7 +116,7 @@ describe("game rules", () => {
 
     submitSteps(game, "a", ["right", "up", "up"]);
 
-    expect(game.players.A.position).toEqual({ x: 0, y: 0 });
+    expect(game.players.A.position).toEqual(startFor("A"));
     expect(game.revealedWalls[0].key).toBe("2,0:right");
     expect(game.currentTurn).toBe("B");
   });
@@ -104,6 +125,7 @@ describe("game rules", () => {
     const game = createPlayingGame();
     game.currentTurn = "A";
     game.turnStartPosition = { x: 0, y: 0 };
+    game.players.A.position = { x: 0, y: 0 };
     game.maze = { size: 8, seed: 1, walls: [] };
 
     submitSteps(game, "a", ["right"]);
@@ -117,6 +139,7 @@ describe("game rules", () => {
     const game = createPlayingGame();
     game.currentTurn = "A";
     game.turnStartPosition = { x: 0, y: 0 };
+    game.players.A.position = { x: 0, y: 0 };
     game.maze = { size: 8, seed: 1, walls: [] };
 
     submitSteps(game, "a", ["right"]);
@@ -132,6 +155,7 @@ describe("game rules", () => {
     const game = createPlayingGame();
     game.currentTurn = "A";
     game.turnStartPosition = { x: 0, y: 0 };
+    game.players.A.position = { x: 0, y: 0 };
     game.maze = { size: 8, seed: 1, walls: ["0,0:right", "6,0:right"] };
 
     submitSteps(game, "a", ["right"]);
@@ -146,10 +170,10 @@ describe("game rules", () => {
   it("wins immediately on reaching the goal", () => {
     const game = createPlayingGame();
     game.currentTurn = "A";
-    game.players.A.position = { x: 6, y: 7 };
+    game.players.A.position = { x: 1, y: 0 };
     game.maze = { size: 8, seed: 1, walls: [] };
 
-    submitSteps(game, "a", ["right", "left", "right"]);
+    submitSteps(game, "a", ["left", "right", "left"]);
 
     expect(game.status).toBe("finished");
     expect(game.winner).toBe("A");

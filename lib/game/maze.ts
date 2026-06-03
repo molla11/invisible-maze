@@ -1,3 +1,4 @@
+import mazePool from "./maze-pool.json";
 import { BOARD_SIZE, type Direction, type Maze, type Point } from "./types";
 
 const directions: Direction[] = ["up", "right", "down", "left"];
@@ -58,100 +59,32 @@ export function shortestPath(maze: Maze, start: Point, goal: Point): number {
   return Number.POSITIVE_INFINITY;
 }
 
-function mulberry32(seed: number): () => number {
-  return () => {
-    let t = (seed += 0x6d2b79f5);
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-function shuffled<T>(items: T[], random: () => number): T[] {
-  return [...items].sort(() => random() - 0.5);
-}
-
-function internalWallKeys(): string[] {
-  const keys: string[] = [];
+function wallKeyFromEdgeId(edgeId: number): string {
+  let current = 0;
   for (let y = 0; y < BOARD_SIZE; y += 1) {
     for (let x = 0; x < BOARD_SIZE; x += 1) {
-      const point = { x, y };
-      const right = movePoint(point, "right");
-      const up = movePoint(point, "up");
-      if (inBounds(right)) keys.push(wallKey(point, "right"));
-      if (inBounds(up)) keys.push(wallKey(point, "up"));
+      if (x < BOARD_SIZE - 1) {
+        if (current === edgeId) return wallKey({ x, y }, "right");
+        current += 1;
+      }
+      if (y < BOARD_SIZE - 1) {
+        if (current === edgeId) return wallKey({ x, y }, "up");
+        current += 1;
+      }
     }
   }
-  return keys;
-}
-
-function mazeFromWalls(walls: Set<string>, seed: number): Maze {
-  return { size: BOARD_SIZE, walls: [...walls].sort(), seed };
-}
-
-function routeDistances(maze: Maze) {
-  return {
-    a: shortestPath(maze, { x: 0, y: 0 }, { x: BOARD_SIZE - 1, y: BOARD_SIZE - 1 }),
-    b: shortestPath(maze, { x: BOARD_SIZE - 1, y: 0 }, { x: 0, y: BOARD_SIZE - 1 })
-  };
-}
-
-function hasExactTargetDistance(walls: Set<string>, seed: number, targetDistance: number): boolean {
-  const { a, b } = routeDistances(mazeFromWalls(walls, seed));
-  return a === targetDistance && b === targetDistance;
-}
-
-function staysWithinTargetDistance(walls: Set<string>, seed: number, targetDistance: number): boolean {
-  const { a, b } = routeDistances(mazeFromWalls(walls, seed));
-  return Number.isFinite(a) && Number.isFinite(b) && a <= targetDistance && b <= targetDistance;
-}
-
-function addWallIf(walls: Set<string>, key: string, predicate: () => boolean): boolean {
-  walls.add(key);
-  if (predicate()) return true;
-  walls.delete(key);
-  return false;
-}
-
-function trimExtraWalls(walls: Set<string>, candidates: string[], seed: number, targetDistance: number, desiredWallCount: number): void {
-  for (const key of candidates) {
-    if (walls.size <= desiredWallCount) return;
-    walls.delete(key);
-    if (!hasExactTargetDistance(walls, seed, targetDistance)) walls.add(key);
-  }
+  throw new Error(`unknown_maze_edge:${edgeId}`);
 }
 
 export function generateMaze(seed = Date.now()): Maze {
-  const random = mulberry32(seed);
-  let targetDistance = random() > 0.5 ? 16 : 14;
-  let desiredWallCount = targetDistance === 16 ? 28 : 22;
-  const walls = new Set<string>();
-  const candidates = shuffled(internalWallKeys(), random);
-  let cursor = 0;
-
-  while (targetDistance === 16 && cursor < candidates.length && !hasExactTargetDistance(walls, seed, targetDistance)) {
-    const key = candidates[cursor];
-    cursor += 1;
-    addWallIf(walls, key, () => staysWithinTargetDistance(walls, seed, targetDistance));
-  }
-
-  if (!hasExactTargetDistance(walls, seed, targetDistance)) {
-    targetDistance = 14;
-    desiredWallCount = 22;
-    walls.clear();
-    cursor = 0;
-  }
-
-  trimExtraWalls(walls, shuffled([...walls], random), seed, targetDistance, desiredWallCount);
-
-  while (cursor < candidates.length && walls.size < desiredWallCount) {
-    const key = candidates[cursor];
-    cursor += 1;
-    if (walls.has(key)) continue;
-    addWallIf(walls, key, () => hasExactTargetDistance(walls, seed, targetDistance));
-  }
-
-  return mazeFromWalls(walls, seed);
+  const templates = mazePool.mazes;
+  const index = Math.abs(Math.floor(seed)) % templates.length;
+  const template = templates[index];
+  return {
+    size: BOARD_SIZE,
+    walls: template.walls.map(wallKeyFromEdgeId).sort(),
+    seed: template.createdSeed
+  };
 }
 
 export const directionsList = directions;
