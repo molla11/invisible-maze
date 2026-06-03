@@ -62,6 +62,7 @@ const store: StoreState =
   (globalForStore.invisibleMazeStore = initialStore);
 
 const cookieName = "im_session";
+const heartbeatSaveIntervalMs = 5_000;
 
 function id(prefix: string): string {
   return `${prefix}_${crypto.randomUUID().replaceAll("-", "").slice(0, 18)}`;
@@ -125,7 +126,9 @@ function gameUpsert(game: GameState, roomId?: string) {
 async function dbSaveGame(admin: SupabaseClient, game: GameState, roomId?: string) {
   const { error } = await admin.from("games").upsert(gameUpsert(game, roomId), { onConflict: "id" });
   if (error) throw new Error(error.message);
+}
 
+async function dbSaveGamePlayers(admin: SupabaseClient, game: GameState) {
   const players = (["A", "B"] as PlayerSlot[]).map((slot) => ({
     game_id: game.id,
     profile_id: game.players[slot].id,
@@ -139,6 +142,13 @@ async function dbSaveGame(admin: SupabaseClient, game: GameState, roomId?: strin
   if (playersError) throw new Error(playersError.message);
 }
 
+function shouldPersistReadHeartbeat(game: GameState, viewerId: string, previousUpdatedAt: number, previousConnectedAt: number) {
+  if (game.updatedAt !== previousUpdatedAt) return true;
+  const slot: PlayerSlot | undefined = game.players.A.id === viewerId ? "A" : game.players.B.id === viewerId ? "B" : undefined;
+  if (!slot) return false;
+  return game.players[slot].connectedAt - previousConnectedAt >= heartbeatSaveIntervalMs;
+}
+
 async function dbLoadGame(admin: SupabaseClient, gameId: string): Promise<GameState> {
   const { data, error } = await admin.from("games").select("id, room_id, status, state").eq("id", gameId).maybeSingle<DbGame>();
   if (error) throw new Error(error.message);
@@ -149,6 +159,7 @@ async function dbLoadGame(admin: SupabaseClient, gameId: string): Promise<GameSt
 async function dbCreateGame(admin: SupabaseClient, playerA: string, playerB: string, roomCodeValue?: string, roomId?: string) {
   const game = createGame(gameId(), playerA, playerB, roomCodeValue);
   await dbSaveGame(admin, game, roomId);
+  await dbSaveGamePlayers(admin, game);
   await admin.from("match_queue").delete().in("profile_id", [playerA, playerB]);
   return game;
 }
@@ -460,9 +471,14 @@ export async function getGame(gameIdValue: string) {
   if (admin) {
     const session = await dbRequireSession(admin);
     const game = await dbLoadGame(admin, gameIdValue);
+    const slot: PlayerSlot | undefined = game.players.A.id === session.id ? "A" : game.players.B.id === session.id ? "B" : undefined;
+    const previousConnectedAt = slot ? game.players[slot].connectedAt : 0;
+    const previousUpdatedAt = game.updatedAt;
     heartbeat(game, session.id);
     advanceClock(game);
-    await dbSaveGame(admin, game);
+    if (shouldPersistReadHeartbeat(game, session.id, previousUpdatedAt, previousConnectedAt)) {
+      await dbSaveGame(admin, game);
+    }
     return { session, game };
   }
 
@@ -525,8 +541,12 @@ export async function requestGameRematch(gameIdValue: string) {
     appendGameEvent(game, "rematch_started", { gameId: nextGameIdValue });
 
     const admin = supabaseAdmin();
-    if (admin) await dbSaveGame(admin, nextGame);
-    else store.games.set(nextGameIdValue, nextGame);
+    if (admin) {
+      await dbSaveGame(admin, nextGame);
+      await dbSaveGamePlayers(admin, nextGame);
+    } else {
+      store.games.set(nextGameIdValue, nextGame);
+    }
   }
 
   const admin = supabaseAdmin();
@@ -536,10 +556,6 @@ export async function requestGameRematch(gameIdValue: string) {
 
 export async function heartbeatGame(gameIdValue: string) {
   const { session, game } = await getGame(gameIdValue);
-  heartbeat(game, session.id);
-
-  const admin = supabaseAdmin();
-  if (admin) await dbSaveGame(admin, game);
   return { session, game };
 }
 
