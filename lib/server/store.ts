@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
-import { createGame, heartbeat } from "@/lib/game/engine";
-import type { Direction, GameState, PlayerSlot } from "@/lib/game/types";
+import { appendGameEvent, createGame, heartbeat } from "@/lib/game/engine";
+import type { Direction, EmoteType, GameState, PlayerSlot } from "@/lib/game/types";
 
 type Session = {
   id: string;
@@ -91,8 +91,20 @@ function findActiveGameForPlayer(playerId: string): GameState | undefined {
   );
 }
 
+function cancelQueueForPlayer(playerId: string) {
+  if (store.queue?.playerId === playerId) store.queue = undefined;
+}
+
+function cancelOpenRoomsForPlayer(playerId: string) {
+  for (const [code, room] of store.rooms) {
+    if (room.hostId === playerId && !room.guestId && !room.gameId) store.rooms.delete(code);
+  }
+}
+
 export async function createRoom() {
   const session = await requireSession();
+  cancelQueueForPlayer(session.id);
+  cancelOpenRoomsForPlayer(session.id);
   let code = roomCode();
   while (store.rooms.has(code)) code = roomCode();
   const room: Room = { code, hostId: session.id, createdAt: Date.now() };
@@ -130,6 +142,7 @@ export async function joinQueue() {
   const session = await requireSession();
   const activeGame = findActiveGameForPlayer(session.id);
   if (activeGame) return { session, status: "matched" as const, gameId: activeGame.id };
+  cancelOpenRoomsForPlayer(session.id);
 
   const waiting = store.queue;
   if (waiting && waiting.playerId !== session.id) {
@@ -165,6 +178,46 @@ export async function submitGameAction(gameId: string, steps: Direction[]) {
   return { session, game };
 }
 
+export async function surrenderGame(gameId: string) {
+  const { session, game } = await getGame(gameId);
+  const { surrender } = await import("@/lib/game/engine");
+  surrender(game, session.id);
+  return { session, game };
+}
+
+export async function sendGameEmote(gameId: string, emote: EmoteType) {
+  const { session, game } = await getGame(gameId);
+  const { sendEmote } = await import("@/lib/game/engine");
+  sendEmote(game, session.id, emote);
+  return { session, game };
+}
+
+export async function requestGameRematch(gameId: string) {
+  const { session, game } = await getGame(gameId);
+  if (game.status !== "finished") throw new Error("game_not_finished");
+  if (!game.rematch || Date.now() > game.rematch.expiresAt) throw new Error("rematch_expired");
+
+  const slot = game.players.A.id === session.id ? "A" : game.players.B.id === session.id ? "B" : undefined;
+  if (!slot) throw new Error("player_not_in_game");
+
+  if (game.rematch.nextGameId) return { session, game, nextGameId: game.rematch.nextGameId };
+
+  if (!game.rematch.requestedBy.includes(slot)) {
+    game.rematch.requestedBy.push(slot);
+    appendGameEvent(game, "rematch_requested", { player: slot });
+  }
+
+  if (game.rematch.requestedBy.length === 2) {
+    const nextGameId = id("game");
+    const nextGame = createGame(nextGameId, game.players.A.id, game.players.B.id, game.roomCode);
+    store.games.set(nextGameId, nextGame);
+    game.rematch.nextGameId = nextGameId;
+    appendGameEvent(game, "rematch_started", { gameId: nextGameId });
+  }
+
+  return { session, game, nextGameId: game.rematch.nextGameId };
+}
+
 export async function heartbeatGame(gameId: string) {
   const { session, game } = await getGame(gameId);
   heartbeat(game, session.id);
@@ -173,6 +226,7 @@ export async function heartbeatGame(gameId: string) {
 
 export function sanitizeGame(game: GameState, viewerId: string) {
   const slot: PlayerSlot | undefined = game.players.A.id === viewerId ? "A" : game.players.B.id === viewerId ? "B" : undefined;
+  const now = Date.now();
   const publicPlayer = (player: GameState["players"][PlayerSlot]) => ({
     position: player.position,
     goal: player.goal,
@@ -186,11 +240,16 @@ export function sanitizeGame(game: GameState, viewerId: string) {
       A: publicPlayer(game.players.A),
       B: publicPlayer(game.players.B)
     },
-    currentTurn: game.currentTurn,
+    currentTurn: game.status !== "waiting" && (game.status !== "coin" || now >= game.coinRevealAt) ? game.currentTurn : undefined,
+    coinTossStartsAt: game.coinTossStartsAt,
+    coinRevealAt: game.coinRevealAt,
+    gameStartsAt: game.gameStartsAt,
     turnStepsUsed: game.turnStepsUsed,
     turnDeadlineAt: game.turnDeadlineAt,
     winner: game.winner,
     winReason: game.winReason,
+    rematch: game.rematch,
+    emotes: game.emotes,
     revealedWalls: game.revealedWalls,
     events: game.events.slice(-20),
     viewerSlot: slot,

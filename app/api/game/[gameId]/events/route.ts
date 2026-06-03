@@ -46,7 +46,9 @@ export async function GET(request: Request, context: Context) {
             controller.enqueue(encoder.encode(": heartbeat\n\n"));
           }
 
-          if (publicGame.status === "finished") close();
+          if (publicGame.status === "finished" && publicGame.rematch && Date.now() > publicGame.rematch.expiresAt) {
+            close();
+          }
         } catch (error) {
           controller.enqueue(
             encoder.encode(

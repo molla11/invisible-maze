@@ -2,6 +2,13 @@ export const BOARD_SIZE = 8;
 export const TURN_SECONDS = 30;
 export const WALL_REVEAL_MS = 10_000;
 export const DISCONNECT_FORFEIT_MS = 60_000;
+export const MATCH_READY_MS = 3_000;
+export const COIN_TOSS_MS = 1_000;
+export const START_COUNTDOWN_MS = 3_000;
+export const REMATCH_WINDOW_MS = 20_000;
+export const EMOTE_WINDOW_MS = 3_000;
+export const EMOTE_LIMIT = 7;
+export const EMOTE_BLOCK_MS = 2_000;
 
 export type PlayerSlot = "A" | "B";
 export type Direction = "up" | "right" | "down" | "left";
@@ -14,7 +21,12 @@ export type GameEventType =
   | "turn_skipped"
   | "timeout_forfeit"
   | "disconnect_forfeit"
+  | "surrender"
+  | "emote"
+  | "rematch_requested"
+  | "rematch_started"
   | "win";
+export type EmoteType = "hello" | "nice" | "oops" | "thinking";
 
 export type Point = {
   x: number;
@@ -34,6 +46,17 @@ export type PlayerState = {
 export type RevealedWall = {
   key: string;
   expiresAt: number;
+};
+
+export type RematchState = {
+  requestedBy: PlayerSlot[];
+  expiresAt: number;
+  nextGameId?: string;
+};
+
+export type EmoteState = {
+  sentAt: number[];
+  blockedUntil?: number;
 };
 
 export type GameEvent = {
@@ -56,12 +79,17 @@ export type GameState = {
   maze: Maze;
   players: Record<PlayerSlot, PlayerState>;
   currentTurn: PlayerSlot;
+  coinTossStartsAt: number;
+  coinRevealAt: number;
+  gameStartsAt: number;
   turnStepsUsed: number;
   turnStartPosition: Point;
   turnStartedAt: number;
   turnDeadlineAt: number;
   winner?: PlayerSlot;
   winReason?: string;
+  rematch?: RematchState;
+  emotes: Record<PlayerSlot, EmoteState>;
   revealedWalls: RevealedWall[];
   events: GameEvent[];
   createdAt: number;

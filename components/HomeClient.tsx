@@ -1,7 +1,7 @@
 "use client";
 
-import { DoorOpen, Radar, Swords } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Copy, DoorOpen, Eye, EyeOff, Radar, Swords } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { ko } from "@/lib/i18n/ko";
 
 type Stats = {
@@ -16,6 +16,9 @@ export function HomeClient({ initialStats }: { initialStats: Stats }) {
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [queued, setQueued] = useState(false);
+  const [inviteCodeCreated, setInviteCodeCreated] = useState(false);
+  const [codeMasked, setCodeMasked] = useState(false);
+  const actionInFlight = useRef(false);
 
   useEffect(() => {
     fetch("/api/session", { method: "POST" }).catch(() => undefined);
@@ -48,45 +51,110 @@ export function HomeClient({ initialStats }: { initialStats: Stats }) {
   }, [code, queued]);
 
   async function autoMatch() {
+    if (actionInFlight.current) return;
+    actionInFlight.current = true;
     setBusy(true);
+    setQueued(false);
+    setCode("");
+    setInviteCodeCreated(false);
+    setCodeMasked(false);
     setNotice("매칭 대기 중입니다.");
-    const response = await fetch("/api/match/join", { method: "POST", body: JSON.stringify({}) });
-    const data = await response.json();
-    if (data.status === "matched") {
-      location.href = `/game/${data.gameId}`;
-      return;
+    try {
+      const response = await fetch("/api/match/join", { method: "POST", body: JSON.stringify({}) });
+      const data = await response.json();
+      if (data.status === "matched") {
+        location.href = `/game/${data.gameId}`;
+        return;
+      }
+      setNotice(ko.queueWaiting);
+      setQueued(true);
+    } catch {
+      setNotice("매칭을 시작하지 못했습니다.");
+    } finally {
+      setBusy(false);
+      actionInFlight.current = false;
     }
-    setNotice(ko.queueWaiting);
-    setQueued(true);
-    setBusy(false);
+  }
+
+  async function cancelMatch() {
+    if (actionInFlight.current) return;
+    actionInFlight.current = true;
+    setBusy(true);
+    try {
+      const response = await fetch("/api/match/cancel", { method: "POST" });
+      if (response.ok) {
+        setQueued(false);
+        setNotice("매칭을 취소했습니다.");
+      } else {
+        setNotice("매칭을 취소하지 못했습니다.");
+      }
+    } catch {
+      setNotice("매칭을 취소하지 못했습니다.");
+    } finally {
+      setBusy(false);
+      actionInFlight.current = false;
+    }
   }
 
   async function createInvite() {
+    if (actionInFlight.current) return;
+    actionInFlight.current = true;
     setBusy(true);
-    const response = await fetch("/api/room", { method: "POST", body: JSON.stringify({}) });
-    const data = await response.json();
-    if (data.code) {
-      setCode(data.code);
-      setNotice(`초대 코드 ${data.code}`);
-    } else {
+    setQueued(false);
+    setInviteCodeCreated(false);
+    setCodeMasked(false);
+    try {
+      const response = await fetch("/api/room", { method: "POST", body: JSON.stringify({}) });
+      const data = await response.json();
+      if (data.code) {
+        setCode(data.code);
+        setInviteCodeCreated(true);
+        setCodeMasked(true);
+        setNotice("초대 코드가 생성되었습니다.");
+      } else {
+        setNotice("방을 만들지 못했습니다.");
+      }
+    } catch {
       setNotice("방을 만들지 못했습니다.");
+    } finally {
+      setBusy(false);
+      actionInFlight.current = false;
     }
-    setBusy(false);
+  }
+
+  async function copyInviteCode() {
+    if (!code.trim()) return;
+    try {
+      await navigator.clipboard.writeText(code.trim().toUpperCase());
+      setNotice("초대 코드를 복사했습니다.");
+    } catch {
+      setNotice("초대 코드를 복사하지 못했습니다.");
+    }
   }
 
   async function joinInvite() {
+    if (actionInFlight.current) return;
     const normalized = code.trim().toUpperCase();
     if (!normalized) return;
+    actionInFlight.current = true;
     setBusy(true);
-    const response = await fetch(`/api/room/${normalized}`, { method: "POST", body: JSON.stringify({}) });
-    const data = await response.json();
-    if (data.gameId) {
-      location.href = `/game/${data.gameId}`;
-      return;
+    try {
+      const response = await fetch(`/api/room/${normalized}`, { method: "POST", body: JSON.stringify({}) });
+      const data = await response.json();
+      if (data.gameId) {
+        location.href = `/game/${data.gameId}`;
+        return;
+      }
+      setNotice(data.error === "room_not_found" ? "방 코드를 찾지 못했습니다." : "입장할 수 없는 방입니다.");
+    } catch {
+      setNotice("입장할 수 없는 방입니다.");
+    } finally {
+      setBusy(false);
+      actionInFlight.current = false;
     }
-    setNotice(data.error === "room_not_found" ? "방 코드를 찾지 못했습니다." : "입장할 수 없는 방입니다.");
-    setBusy(false);
   }
+
+  const displayedCode = inviteCodeCreated && codeMasked ? "*".repeat(code.length) : code;
 
   return (
     <main className="shell">
@@ -100,56 +168,88 @@ export function HomeClient({ initialStats }: { initialStats: Stats }) {
       </nav>
 
       <section className="hero">
-        <div className="hero-copy">
-          <div className="metric-grid" aria-label="서비스 상태">
-            <div className="metric-card">
-              <span>접속자</span>
-              <strong>{stats.online}</strong>
-            </div>
-            <div className="metric-card">
-              <span>큐 대기</span>
-              <strong>{stats.waitingInQueue}</strong>
-            </div>
-            <div className="metric-card">
-              <span>진행 게임</span>
-              <strong>{stats.activeGames}</strong>
-            </div>
-          </div>
-        </div>
-
         <div className="entry-panel">
           <div className="actions">
-            <button className={`button primary-action ${queued ? "is-queueing" : ""}`} disabled={busy} onClick={autoMatch}>
-              <Radar size={22} />
-              <span>{queued ? "매칭 대기 중" : ko.autoMatch}</span>
-              {queued ? (
-                <span className="queue-dots" aria-hidden="true">
-                  <span />
-                  <span />
-                  <span />
-                </span>
-              ) : null}
-            </button>
+            {queued ? (
+              <div className="match-control is-queueing">
+                <button className="button primary-action match-status" disabled type="button">
+                  <Radar size={22} />
+                  <span>매칭 중</span>
+                  <span className="queue-dots" aria-hidden="true">
+                    <span />
+                    <span />
+                    <span />
+                  </span>
+                </button>
+                <button className="button match-cancel" disabled={busy} onClick={cancelMatch} type="button">
+                  매칭 취소
+                </button>
+              </div>
+            ) : (
+              <button className="button primary-action" disabled={busy} onClick={autoMatch}>
+                <Radar size={22} />
+                <span>{ko.autoMatch}</span>
+              </button>
+            )}
             <div className="invite-row">
               <button className="button secondary" disabled={busy} onClick={createInvite}>
                 <DoorOpen size={18} />
                 {ko.createRoom}
               </button>
               <div className="input-row">
-                <input
-                  className="input"
-                  maxLength={5}
-                  placeholder={ko.roomCode}
-                  value={code}
-                  onChange={(event) => setCode(event.target.value.toUpperCase())}
-                />
-                <button className="button" disabled={busy || !code.trim()} onClick={joinInvite}>
-                  {ko.joinRoom}
+                <div className="code-field">
+                  <input
+                    className="input"
+                    maxLength={5}
+                    placeholder={ko.roomCode}
+                    readOnly={inviteCodeCreated}
+                    value={displayedCode}
+                    onChange={(event) => {
+                      setInviteCodeCreated(false);
+                      setCodeMasked(false);
+                      setCode(event.target.value.toUpperCase());
+                    }}
+                  />
+                  {inviteCodeCreated ? (
+                    <button
+                      aria-label={codeMasked ? "초대 코드 보기" : "초대 코드 숨기기"}
+                      className="code-visibility-button"
+                      onClick={() => setCodeMasked((masked) => !masked)}
+                      title={codeMasked ? "초대 코드 보기" : "초대 코드 숨기기"}
+                      type="button"
+                    >
+                      {codeMasked ? <Eye size={18} /> : <EyeOff size={18} />}
+                    </button>
+                  ) : null}
+                </div>
+                <button
+                  aria-label={inviteCodeCreated ? "초대 코드 복사" : undefined}
+                  className={`button ${inviteCodeCreated ? "icon-action" : ""}`}
+                  disabled={busy || !code.trim()}
+                  onClick={inviteCodeCreated ? copyInviteCode : joinInvite}
+                  title={inviteCodeCreated ? "초대 코드 복사" : undefined}
+                  type="button"
+                >
+                  {inviteCodeCreated ? <Copy size={18} /> : ko.joinRoom}
                 </button>
               </div>
             </div>
           </div>
           {notice ? <p className="notice strong-notice">{notice}</p> : null}
+          <div className="compact-stats" aria-label="서비스 상태">
+            <div>
+              <span>접속자</span>
+              <strong>{stats.online}</strong>
+            </div>
+            <div>
+              <span>매칭 중</span>
+              <strong>{stats.waitingInQueue}</strong>
+            </div>
+            <div>
+              <span>진행 중인 게임</span>
+              <strong>{stats.activeGames}</strong>
+            </div>
+          </div>
         </div>
       </section>
     </main>

@@ -36,6 +36,10 @@ export function hasWall(maze: Maze, point: Point, direction: Direction): boolean
   return !inBounds(movePoint(point, direction), maze.size) || maze.walls.includes(wallKey(point, direction));
 }
 
+function isEdgePoint(point: Point, size = BOARD_SIZE): boolean {
+  return point.x === 0 || point.y === 0 || point.x === size - 1 || point.y === size - 1;
+}
+
 export function shortestPath(maze: Maze, start: Point, goal: Point): number {
   const queue: Array<{ point: Point; distance: number }> = [{ point: start, distance: 0 }];
   const seen = new Set([`${start.x},${start.y}`]);
@@ -79,8 +83,11 @@ export function generateMaze(seed = Date.now()): Maze {
     const candidates: Array<{ point: Point; direction: Direction }> = [];
     for (let y = 0; y < BOARD_SIZE; y += 1) {
       for (let x = 0; x < BOARD_SIZE; x += 1) {
-        if (x < BOARD_SIZE - 1) candidates.push({ point: { x, y }, direction: "right" });
-        if (y < BOARD_SIZE - 1) candidates.push({ point: { x, y }, direction: "up" });
+        const point = { x, y };
+        const right = movePoint(point, "right");
+        const up = movePoint(point, "up");
+        if (inBounds(right) && !isEdgePoint(point) && !isEdgePoint(right)) candidates.push({ point, direction: "right" });
+        if (inBounds(up) && !isEdgePoint(point) && !isEdgePoint(up)) candidates.push({ point, direction: "up" });
       }
     }
 

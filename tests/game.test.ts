@@ -1,6 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { createGame, submitSteps } from "@/lib/game/engine";
-import { generateMaze, hasWall, shortestPath } from "@/lib/game/maze";
+import { advanceClock, createGame, heartbeat, sendEmote, submitSteps, surrender } from "@/lib/game/engine";
+import { generateMaze, hasWall, movePoint, shortestPath } from "@/lib/game/maze";
+import { COIN_TOSS_MS, EMOTE_BLOCK_MS, EMOTE_LIMIT, EMOTE_WINDOW_MS, MATCH_READY_MS, REMATCH_WINDOW_MS, START_COUNTDOWN_MS, TURN_SECONDS } from "@/lib/game/types";
+
+function createPlayingGame(seed = 1) {
+  const game = createGame("game", "a", "b", undefined, seed);
+  const at = Date.now();
+  game.status = "playing";
+  game.players.A.connectedAt = at;
+  game.players.B.connectedAt = at;
+  game.turnStartedAt = at;
+  game.turnDeadlineAt = at + TURN_SECONDS * 1000;
+  return game;
+}
 
 describe("maze generation", () => {
   it("creates reachable goals with equal shortest paths", () => {
@@ -11,18 +23,61 @@ describe("maze generation", () => {
     );
     expect(shortestPath(maze, { x: 0, y: 0 }, { x: 7, y: 7 })).toBeGreaterThanOrEqual(14);
   });
+
+  it("does not place maze walls next to the board edge", () => {
+    const maze = generateMaze(42);
+    const isEdge = (x: number, y: number) => x === 0 || y === 0 || x === maze.size - 1 || y === maze.size - 1;
+
+    for (const wall of maze.walls) {
+      const [rawPoint, direction] = wall.split(":") as [`${number},${number}`, "up" | "right" | "down" | "left"];
+      const [x, y] = rawPoint.split(",").map(Number);
+      const next = movePoint({ x, y }, direction);
+
+      expect(isEdge(x, y)).toBe(false);
+      expect(isEdge(next.x, next.y)).toBe(false);
+    }
+  });
 });
 
 describe("game rules", () => {
-  it("requires one to three steps", () => {
+  it("reveals the coin toss winner before starting the first turn", () => {
     const game = createGame("game", "a", "b", undefined, 1);
+    const first = game.currentTurn;
+    const readyAt = Date.now();
+
+    expect(game.status).toBe("waiting");
+
+    heartbeat(game, "a", readyAt);
+    expect(game.status).toBe("waiting");
+
+    heartbeat(game, "b", readyAt);
+    expect(game.status).toBe("coin");
+    expect(game.coinTossStartsAt).toBe(readyAt + MATCH_READY_MS);
+    expect(game.coinRevealAt).toBe(game.coinTossStartsAt + COIN_TOSS_MS);
+    expect(game.gameStartsAt).toBe(game.coinRevealAt + START_COUNTDOWN_MS);
+    expect(game.events.some((event) => event.type === "coin_tossed")).toBe(false);
+
+    advanceClock(game, game.coinRevealAt);
+
+    expect(game.status).toBe("coin");
+    expect(game.events.at(-1)).toMatchObject({ type: "coin_tossed", payload: { first } });
+
+    advanceClock(game, game.gameStartsAt);
+
+    expect(game.status).toBe("playing");
+    expect(game.currentTurn).toBe(first);
+    expect(game.turnDeadlineAt).toBe(game.gameStartsAt + TURN_SECONDS * 1000);
+  });
+
+  it("requires one to three steps", () => {
+    const game = createPlayingGame();
     const playerId = game.players[game.currentTurn].id;
 
     expect(() => submitSteps(game, playerId, [])).toThrow("one_to_three_steps_required");
   });
 
   it("returns a player to the original start after hitting a wall", () => {
-    const game = createGame("game", "a", "b", undefined, 1);
+    const game = createPlayingGame();
     game.currentTurn = "A";
     game.turnStartPosition = { x: 2, y: 0 };
     game.players.A.position = { x: 2, y: 0 };
@@ -36,7 +91,7 @@ describe("game rules", () => {
   });
 
   it("keeps the turn after fewer than three successful moves", () => {
-    const game = createGame("game", "a", "b", undefined, 1);
+    const game = createPlayingGame();
     game.currentTurn = "A";
     game.turnStartPosition = { x: 0, y: 0 };
     game.maze = { size: 8, seed: 1, walls: [] };
@@ -49,7 +104,7 @@ describe("game rules", () => {
   });
 
   it("passes the turn after three successful moves", () => {
-    const game = createGame("game", "a", "b", undefined, 1);
+    const game = createPlayingGame();
     game.currentTurn = "A";
     game.turnStartPosition = { x: 0, y: 0 };
     game.maze = { size: 8, seed: 1, walls: [] };
@@ -64,7 +119,7 @@ describe("game rules", () => {
   });
 
   it("only keeps the last hit wall visible", () => {
-    const game = createGame("game", "a", "b", undefined, 1);
+    const game = createPlayingGame();
     game.currentTurn = "A";
     game.turnStartPosition = { x: 0, y: 0 };
     game.maze = { size: 8, seed: 1, walls: ["0,0:right", "6,0:right"] };
@@ -79,7 +134,7 @@ describe("game rules", () => {
   });
 
   it("wins immediately on reaching the goal", () => {
-    const game = createGame("game", "a", "b", undefined, 1);
+    const game = createPlayingGame();
     game.currentTurn = "A";
     game.players.A.position = { x: 6, y: 7 };
     game.maze = { size: 8, seed: 1, walls: [] };
@@ -90,8 +145,59 @@ describe("game rules", () => {
     expect(game.winner).toBe("A");
   });
 
+  it("finishes immediately when a player surrenders", () => {
+    const game = createPlayingGame();
+    const at = Date.now();
+
+    surrender(game, "a", at);
+
+    expect(game.status).toBe("finished");
+    expect(game.winner).toBe("B");
+    expect(game.winReason).toBe("surrender");
+    expect(game.rematch).toMatchObject({ requestedBy: [], expiresAt: at + REMATCH_WINDOW_MS });
+    expect(game.events.at(-2)).toMatchObject({ type: "surrender", payload: { loser: "A", winner: "B" } });
+  });
+
+  it("records emotes as public game events", () => {
+    const game = createPlayingGame();
+
+    sendEmote(game, "a", "nice");
+
+    expect(game.events.at(-1)).toMatchObject({ type: "emote", payload: { player: "A", emote: "nice" } });
+  });
+
+  it("blocks emotes for two seconds after seven sends in three seconds", () => {
+    const game = createPlayingGame();
+    const at = Date.now();
+
+    for (let index = 0; index < EMOTE_LIMIT; index += 1) {
+      sendEmote(game, "a", "nice", at + index);
+    }
+
+    expect(() => sendEmote(game, "a", "nice", at + EMOTE_LIMIT)).toThrow("emote_blocked");
+    expect(() => sendEmote(game, "a", "nice", at + EMOTE_LIMIT + EMOTE_BLOCK_MS - 1)).toThrow("emote_blocked");
+
+    sendEmote(game, "a", "nice", at + EMOTE_WINDOW_MS);
+
+    expect(game.events.at(-1)).toMatchObject({ type: "emote", payload: { player: "A", emote: "nice" } });
+  });
+
   it("treats board edges as walls", () => {
-    const game = createGame("game", "a", "b", undefined, 1);
+    const game = createPlayingGame();
     expect(hasWall(game.maze, { x: 0, y: 0 }, "left")).toBe(true);
+  });
+
+  it("rejects moving out of bounds without ending the turn", () => {
+    const game = createPlayingGame();
+    game.currentTurn = "A";
+    game.players.A.position = { x: 0, y: 0 };
+    game.turnStepsUsed = 0;
+    game.maze = { size: 8, seed: 1, walls: [] };
+
+    expect(() => submitSteps(game, "a", ["left"])).toThrow("out_of_bounds_move");
+    expect(game.players.A.position).toEqual({ x: 0, y: 0 });
+    expect(game.currentTurn).toBe("A");
+    expect(game.turnStepsUsed).toBe(0);
+    expect(game.revealedWalls).toHaveLength(0);
   });
 });
