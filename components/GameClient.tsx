@@ -473,9 +473,6 @@ export function GameClient({ gameId }: { gameId: string }) {
               <span>
                 최단 경로 <strong>{game.mazeStats.shortestPath}</strong>
               </span>
-              <span>
-                벽 <strong>{game.mazeStats.walls}</strong>
-              </span>
             </div>
             <div className="board" aria-label="Invisible Maze board">
               {Array.from({ length: 64 }, (_, index) => {
@@ -578,13 +575,19 @@ export function GameClient({ gameId }: { gameId: string }) {
                             : rematchRequested && opponentRematchRequested
                               ? "다시 플레이 시작 중"
                               : opponentRematchRequested
-                                ? "상대방이 다시 플레이를 요청했습니다"
+                                ? "상대의 요청 도착"
                                 : rematchRequested
                                   ? "상대 응답 대기 중"
                                   : "다시 플레이"}
                       </span>
                     </button>
-                    <span className="end-action-subtext">{rematchExpired ? "새로운 게임 참가를 이용하세요" : `${rematchSecondsLeft}초 남음`}</span>
+                    <span className="end-action-subtext">
+                      {rematchExpired
+                        ? "새로운 게임 참가를 이용하세요"
+                        : opponentRematchRequested && !rematchRequested
+                          ? `수락하시겠습니까? · ${rematchSecondsLeft}초 남음`
+                          : `${rematchSecondsLeft}초 남음`}
+                    </span>
                   </div>
                   {endQueued ? (
                     <div className="new-match-group">
