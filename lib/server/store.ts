@@ -1,7 +1,8 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import { advanceClock, appendGameEvent, createGame, heartbeat } from "@/lib/game/engine";
-import type { Direction, EmoteType, GameState, GameStatus, PlayerSlot } from "@/lib/game/types";
+import { shortestPath } from "@/lib/game/maze";
+import { goalFor, startFor, type Direction, type EmoteType, type GameState, type GameStatus, type PlayerSlot } from "@/lib/game/types";
 
 type Session = {
   id: string;
@@ -599,6 +600,10 @@ export function sanitizeGame(game: GameState, viewerId: string) {
     rematch: game.rematch,
     emotes: game.emotes,
     revealedWalls: game.revealedWalls,
+    mazeStats: {
+      shortestPath: shortestPath(game.maze, startFor("A"), goalFor("A")),
+      walls: game.maze.walls.length
+    },
     mazeWalls: game.status === "finished" ? game.maze.walls : undefined,
     wallHits,
     events: game.events.slice(-20),

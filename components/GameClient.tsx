@@ -52,6 +52,10 @@ type PublicGame = {
   };
   emotes: Record<PlayerSlot, { sentAt: number[]; blockedUntil?: number }>;
   revealedWalls: Array<{ key: string; expiresAt: number }>;
+  mazeStats: {
+    shortestPath: number;
+    walls: number;
+  };
   mazeWalls?: string[];
   wallHits?: Record<string, PlayerSlot[]>;
   events: GameEvent[];
@@ -465,6 +469,14 @@ export function GameClient({ gameId }: { gameId: string }) {
       <section className="game-shell">
         <div className="game-panel">
           <div className="board-wrap">
+            <div className="board-meta" aria-label="미로 정보">
+              <span>
+                최단 경로 <strong>{game.mazeStats.shortestPath}</strong>
+              </span>
+              <span>
+                벽 <strong>{game.mazeStats.walls}</strong>
+              </span>
+            </div>
             <div className="board" aria-label="Invisible Maze board">
               {Array.from({ length: 64 }, (_, index) => {
                 const x = index % 8;
