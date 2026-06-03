@@ -1,5 +1,5 @@
 export async function verifyTurnstile(token?: string | null): Promise<boolean> {
-  if (process.env.NODE_ENV !== "production" && !process.env.TURNSTILE_SECRET_KEY) return true;
+  if (process.env.TURNSTILE_REQUIRED !== "true") return true;
   if (!process.env.TURNSTILE_SECRET_KEY || !token) return false;
 
   const form = new FormData();
