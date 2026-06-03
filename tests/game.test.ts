@@ -15,27 +15,37 @@ function createPlayingGame(seed = 1) {
 }
 
 describe("maze generation", () => {
-  it("creates reachable goals with equal shortest paths", () => {
-    const maze = generateMaze(42);
+  it("creates reachable goals with equal shortest paths of 14 or 16", () => {
+    for (let seed = 1; seed <= 40; seed += 1) {
+      const maze = generateMaze(seed);
+      const aDistance = shortestPath(maze, { x: 0, y: 0 }, { x: 7, y: 7 });
+      const bDistance = shortestPath(maze, { x: 7, y: 0 }, { x: 0, y: 7 });
 
-    expect(shortestPath(maze, { x: 0, y: 0 }, { x: 7, y: 7 })).toBe(
-      shortestPath(maze, { x: 7, y: 0 }, { x: 0, y: 7 })
-    );
-    expect(shortestPath(maze, { x: 0, y: 0 }, { x: 7, y: 7 })).toBeGreaterThanOrEqual(14);
+      expect(aDistance).toBe(bDistance);
+      expect([14, 16]).toContain(aDistance);
+    }
   });
 
-  it("does not place maze walls next to the board edge", () => {
+  it("places walls on edge cells without adding outer border walls", () => {
     const maze = generateMaze(42);
-    const isEdge = (x: number, y: number) => x === 0 || y === 0 || x === maze.size - 1 || y === maze.size - 1;
+    const isEdge = (point: { x: number; y: number }) =>
+      point.x === 0 || point.y === 0 || point.x === maze.size - 1 || point.y === maze.size - 1;
+    let hasEdgeCellWall = false;
 
     for (const wall of maze.walls) {
       const [rawPoint, direction] = wall.split(":") as [`${number},${number}`, "up" | "right" | "down" | "left"];
       const [x, y] = rawPoint.split(",").map(Number);
+      const point = { x, y };
       const next = movePoint({ x, y }, direction);
 
-      expect(isEdge(x, y)).toBe(false);
-      expect(isEdge(next.x, next.y)).toBe(false);
+      expect(next.x).toBeGreaterThanOrEqual(0);
+      expect(next.y).toBeGreaterThanOrEqual(0);
+      expect(next.x).toBeLessThan(maze.size);
+      expect(next.y).toBeLessThan(maze.size);
+      if (isEdge(point) || isEdge(next)) hasEdgeCellWall = true;
     }
+
+    expect(hasEdgeCellWall).toBe(true);
   });
 });
 
