@@ -20,6 +20,7 @@ import {
 import Link from "next/link";
 import type { CSSProperties } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { playGameSound } from "@/lib/client/game-sounds";
 import {
   EMOTE_LIMIT,
   EMOTE_WINDOW_MS,
@@ -196,6 +197,7 @@ export function GameClient({ gameId }: { gameId: string }) {
   const [opponentEmote, setOpponentEmote] = useState<{ id: string; label: string; emoji: string } | null>(null);
   const seenEventIds = useRef<Set<string> | null>(null);
   const actionPendingRef = useRef(false);
+  const lastTurnRef = useRef<PlayerSlot | undefined>(undefined);
 
   const showOpponentEmote = useCallback((emote: unknown) => {
     const id = crypto.randomUUID();
@@ -208,6 +210,7 @@ export function GameClient({ gameId }: { gameId: string }) {
 
   useEffect(() => {
     seenEventIds.current = null;
+    lastTurnRef.current = undefined;
     setOpponentEmote(null);
   }, [gameId]);
 
@@ -431,9 +434,34 @@ export function GameClient({ gameId }: { gameId: string }) {
 
       if (event.type === "emote" && event.payload.player !== game.viewerSlot) {
         showOpponentEmote(event.payload.emote);
+        playGameSound("emote");
+      }
+      if (event.type === "move") playGameSound("move");
+      if (event.type === "wall_hit") playGameSound("wall");
+      if (event.type === "coin_tossed") playGameSound("notify");
+      if (event.type === "turn_skipped") playGameSound("notify");
+      if (event.type === "rematch_started") playGameSound("notify");
+      if (event.type === "rematch_requested" && event.payload.player !== game.viewerSlot) {
+        playGameSound("notify");
+      }
+      if (event.type === "win") {
+        playGameSound(event.payload.winner === game.viewerSlot ? "win" : "lose");
       }
     }
   }, [game, showOpponentEmote]);
+
+  useEffect(() => {
+    if (!game || game.status !== "playing") {
+      lastTurnRef.current = game?.currentTurn;
+      return;
+    }
+
+    const previousTurn = lastTurnRef.current;
+    lastTurnRef.current = game.currentTurn;
+    if (previousTurn && previousTurn !== game.currentTurn && game.currentTurn === game.viewerSlot) {
+      playGameSound("turn");
+    }
+  }, [game?.currentTurn, game?.status, game?.viewerSlot, game]);
 
   const recentEvents = useMemo(() => [...(game?.events ?? [])].slice(-8).reverse(), [game?.events]);
   const rematchRequested = Boolean(game?.viewerSlot && game.rematch?.requestedBy.includes(game.viewerSlot));
