@@ -3,11 +3,11 @@ import { dirname, resolve } from "node:path";
 
 const BOARD_SIZE = 8;
 const WALL_COUNT = 28;
-const TARGET_COUNT = Number(process.argv[2] ?? 10_000);
+const TARGET_COUNT = Number(process.argv[2] ?? 2_000);
 const OUT_FILE = resolve(process.argv[3] ?? "lib/game/maze-pool.json");
 
-const START_A = pointId(7, 7);
-const GOAL_A = pointId(0, 0);
+const START_A = pointId(0, 0);
+const GOAL_A = pointId(7, 7);
 const START_B = pointId(7, 0);
 const GOAL_B = pointId(0, 7);
 const ALLOWED_PATH_LENGTHS = new Set([14, 16]);
@@ -18,6 +18,8 @@ const STRICT_PROFILE = {
   maxPathLength: 16,
   minHorizontalWalls: 12,
   maxHorizontalWalls: 16,
+  minOuterCellWalls: 15,
+  maxOuterCellWalls: 18,
   maxSectorRange: 2,
   maxRowBandRange: 3,
   maxColBandRange: 3,
@@ -34,6 +36,8 @@ const NORMAL_PROFILE = {
   maxPathLength: 16,
   minHorizontalWalls: 10,
   maxHorizontalWalls: 18,
+  minOuterCellWalls: 14,
+  maxOuterCellWalls: 19,
   maxSectorRange: 3,
   maxRowBandRange: 4,
   maxColBandRange: 4,
@@ -50,6 +54,8 @@ const LOOSE_PROFILE = {
   maxPathLength: 16,
   minHorizontalWalls: 8,
   maxHorizontalWalls: 20,
+  minOuterCellWalls: 13,
+  maxOuterCellWalls: 20,
   maxSectorRange: 5,
   maxRowBandRange: 6,
   maxColBandRange: 6,
@@ -108,12 +114,17 @@ function makeEdge(id, x, y, direction) {
     direction,
     key: edgeKey(x, y, direction),
     orientation: direction === "up" ? "H" : "V",
+    outerCell: isOuterCell(x, y) || isOuterCell(to.x, to.y),
     a: pointId(x, y),
     b: pointId(to.x, to.y),
     sector: Math.min(3, Math.floor(midX / 2)) + Math.min(3, Math.floor(midY / 2)) * 4,
     rowBand: Math.min(3, Math.floor(midY / 2)),
     colBand: Math.min(3, Math.floor(midX / 2))
   };
+}
+
+function isOuterCell(x, y) {
+  return x === 0 || y === 0 || x === BOARD_SIZE - 1 || y === BOARD_SIZE - 1;
 }
 
 function mirrorEdgeId(edge) {
@@ -193,12 +204,19 @@ function generateBalancedRandomWalls(profile, rng) {
   const walls = new Set();
   const sectorQuota = makeSectorQuota(WALL_COUNT, rng);
   const targetHorizontal = rng.int(profile.minHorizontalWalls, profile.maxHorizontalWalls);
+  const targetOuterCellWalls = rng.int(profile.minOuterCellWalls, profile.maxOuterCellWalls);
   let horizontalCount = 0;
   let verticalCount = 0;
+  let outerCellCount = 0;
 
   for (const edge of shuffle(EDGES, rng)) {
     if (walls.size >= WALL_COUNT) break;
     if (sectorQuota[edge.sector] <= 0) continue;
+    if (edge.outerCell) {
+      if (outerCellCount >= targetOuterCellWalls) continue;
+    } else if (walls.size - outerCellCount >= WALL_COUNT - targetOuterCellWalls) {
+      continue;
+    }
     if (edge.orientation === "H") {
       if (horizontalCount >= targetHorizontal) continue;
       horizontalCount += 1;
@@ -208,11 +226,19 @@ function generateBalancedRandomWalls(profile, rng) {
       verticalCount += 1;
     }
     walls.add(edge.id);
+    if (edge.outerCell) outerCellCount += 1;
     sectorQuota[edge.sector] -= 1;
   }
 
   while (walls.size < WALL_COUNT) {
-    walls.add(randomChoice(EDGES, rng).id);
+    const candidates = EDGES.filter((edge) => {
+      if (walls.has(edge.id)) return false;
+      if (edge.outerCell) return outerCellCount < targetOuterCellWalls;
+      return walls.size - outerCellCount < WALL_COUNT - targetOuterCellWalls;
+    });
+    const edge = randomChoice(candidates.length > 0 ? candidates : EDGES.filter((candidate) => !walls.has(candidate.id)), rng);
+    walls.add(edge.id);
+    if (edge.outerCell) outerCellCount += 1;
   }
 
   return walls;
@@ -269,6 +295,14 @@ function countHorizontalWalls(walls) {
   return count;
 }
 
+function countOuterCellWalls(walls) {
+  let count = 0;
+  for (const id of walls) {
+    if (EDGE_BY_ID.get(id).outerCell) count += 1;
+  }
+  return count;
+}
+
 function countsBy(walls, key) {
   const counts = Array(4).fill(0);
   for (const id of walls) counts[EDGE_BY_ID.get(id)[key]] += 1;
@@ -313,6 +347,7 @@ function evaluateMaze(walls, profile = NORMAL_PROFILE) {
   const distanceA = bfsDistance(START_A, GOAL_A, walls);
   const distanceB = bfsDistance(START_B, GOAL_B, walls);
   const horizontalWalls = countHorizontalWalls(walls);
+  const outerCellWalls = countOuterCellWalls(walls);
   const sectors = sectorCounts(walls);
   const rowBands = countsBy(walls, "rowBand");
   const colBands = countsBy(walls, "colBand");
@@ -324,6 +359,7 @@ function evaluateMaze(walls, profile = NORMAL_PROFILE) {
     distanceB,
     horizontalWalls,
     verticalWalls: walls.size - horizontalWalls,
+    outerCellWalls,
     sectorCounts: sectors,
     rowBandCounts: rowBands,
     colBandCounts: colBands,
@@ -351,6 +387,7 @@ function isAcceptableMaze(walls, profile) {
   const evaluation = evaluateMaze(walls, profile);
   if (evaluation.distanceA < profile.minPathLength || evaluation.distanceA > profile.maxPathLength) return false;
   if (evaluation.horizontalWalls < profile.minHorizontalWalls || evaluation.horizontalWalls > profile.maxHorizontalWalls) return false;
+  if (evaluation.outerCellWalls < profile.minOuterCellWalls || evaluation.outerCellWalls > profile.maxOuterCellWalls) return false;
   if (evaluation.sectorRange > profile.maxSectorRange) return false;
   if (evaluation.rowBandRange > profile.maxRowBandRange) return false;
   if (evaluation.colBandRange > profile.maxColBandRange) return false;
@@ -367,6 +404,13 @@ function orientationPenalty(walls, profile) {
   const horizontal = countHorizontalWalls(walls);
   if (horizontal < profile.minHorizontalWalls) return profile.minHorizontalWalls - horizontal;
   if (horizontal > profile.maxHorizontalWalls) return horizontal - profile.maxHorizontalWalls;
+  return 0;
+}
+
+function outerCellPenalty(walls, profile) {
+  const count = countOuterCellWalls(walls);
+  if (count < profile.minOuterCellWalls) return profile.minOuterCellWalls - count;
+  if (count > profile.maxOuterCellWalls) return count - profile.maxOuterCellWalls;
   return 0;
 }
 
@@ -387,6 +431,7 @@ function scoreMaze(walls, profile) {
     pathLengthPenalty +
     distributionPenalty(walls) * 10 +
     orientationPenalty(walls, profile) * 8 +
+    outerCellPenalty(walls, profile) * 10 +
     symmetryRatio(walls) * 5 +
     localDensityPenalty(walls) * 12 +
     startGoalPenalty(walls, profile) * 30
@@ -538,8 +583,8 @@ async function main() {
     version: 1,
     boardSize: BOARD_SIZE,
     wallCount: WALL_COUNT,
-    starts: { A: [7, 7], B: [7, 0] },
-    goals: { A: [0, 0], B: [0, 7] },
+    starts: { A: [0, 0], B: [7, 0] },
+    goals: { A: [7, 7], B: [0, 7] },
     count: pool.length,
     mazes: pool
   };

@@ -170,10 +170,10 @@ describe("game rules", () => {
   it("wins immediately on reaching the goal", () => {
     const game = createPlayingGame();
     game.currentTurn = "A";
-    game.players.A.position = { x: 1, y: 0 };
+    game.players.A.position = { x: 6, y: 7 };
     game.maze = { size: 8, seed: 1, walls: [] };
 
-    submitSteps(game, "a", ["left", "right", "left"]);
+    submitSteps(game, "a", ["right", "left", "right"]);
 
     expect(game.status).toBe("finished");
     expect(game.winner).toBe("A");
