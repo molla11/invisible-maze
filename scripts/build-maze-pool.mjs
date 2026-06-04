@@ -499,7 +499,11 @@ function generateOneMaze(edges, profile, seed) {
     if (isAcceptableMaze(walls, profile)) return { walls, evaluation };
   }
 
-  return bestMaze && isAcceptableMaze(bestMaze.walls, profile) ? bestMaze : null;
+  if (!bestMaze) return null;
+
+  const repairedWalls = repairMaze(edges, bestMaze.walls, profile, rng);
+  const repairedEvaluation = evaluateMaze(repairedWalls, profile);
+  return isAcceptableMaze(repairedWalls, profile) ? { walls: repairedWalls, evaluation: repairedEvaluation } : null;
 }
 
 function generateFallbackFairMaze(edges, seed) {

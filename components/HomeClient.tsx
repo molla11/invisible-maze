@@ -11,6 +11,7 @@ declare global {
     turnstile?: {
       render(container: HTMLElement, options: {
         sitekey: string;
+        size?: "normal" | "flexible" | "compact";
         callback(token: string): void;
         "expired-callback"(): void;
         "error-callback"(): void;
@@ -57,6 +58,7 @@ export function HomeClient({ initialStats }: { initialStats: Stats }) {
     if (!turnstileSiteKey || turnstileVerified || !turnstileContainerRef.current || turnstileWidgetRef.current) return;
     turnstileWidgetRef.current = window.turnstile?.render(turnstileContainerRef.current, {
       sitekey: turnstileSiteKey,
+      size: "flexible",
       callback: setTurnstileToken,
       "expired-callback": () => setTurnstileToken(""),
       "error-callback": () => setTurnstileToken("")
@@ -332,8 +334,18 @@ export function HomeClient({ initialStats }: { initialStats: Stats }) {
                   <span>{ko.autoMatch}</span>
                 </button>
               )}
-              {turnstileSiteKey && !turnstileVerified ? <div ref={turnstileContainerRef} className="turnstile-box" /> : null}
             </div>
+            {turnstileSiteKey ? (
+              !turnstileVerified ? <div ref={turnstileContainerRef} className="turnstile-box" /> : null
+            ) : (
+              <div className="turnstile-box" aria-hidden="true">
+                <div className="mock-turnstile-widget">
+                  <span className="mock-turnstile-checkbox" />
+                  <span className="mock-turnstile-label">Mock verification</span>
+                  <span className="mock-turnstile-brand">Turnstile</span>
+                </div>
+              </div>
+            )}
             <div className="invite-row">
               <button className="button secondary" disabled={busy} onClick={createInvite}>
                 <DoorOpen size={18} />
