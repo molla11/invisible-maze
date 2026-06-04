@@ -7,12 +7,19 @@ import { goalFor, startFor, type Direction, type EmoteType, type GameState, type
 type Session = {
   id: string;
   createdAt: number;
+  seenAt: number;
   linkedProvider?: "google";
 };
 
 type QueueEntry = {
   playerId: string;
   createdAt: number;
+};
+
+type PresenceConnection = {
+  sessionId: string;
+  connectedAt: number;
+  seenAt: number;
 };
 
 type Room = {
@@ -26,6 +33,7 @@ type Room = {
 
 type StoreState = {
   sessions: Map<string, Session>;
+  presenceConnections: Map<string, PresenceConnection>;
   queue?: QueueEntry;
   rooms: Map<string, Room>;
   games: Map<string, GameState>;
@@ -54,6 +62,7 @@ const globalForStore = globalThis as unknown as {
 
 const initialStore: StoreState = {
   sessions: new Map(),
+  presenceConnections: new Map(),
   rooms: new Map(),
   games: new Map()
 };
@@ -64,6 +73,8 @@ const store: StoreState =
 
 const cookieName = "im_session";
 const heartbeatSaveIntervalMs = 5_000;
+const presenceWindowMs = 60_000;
+const presenceStaleMs = 25_000;
 
 function id(prefix: string): string {
   return `${prefix}_${crypto.randomUUID().replaceAll("-", "").slice(0, 18)}`;
@@ -168,9 +179,10 @@ async function dbCreateGame(admin: SupabaseClient, playerA: string, playerB: str
 async function dbRequireSession(admin: SupabaseClient): Promise<Session> {
   const jar = await cookies();
   const token = jar.get(cookieName)?.value ?? id("anon");
+  const seenAt = Date.now();
   const { data, error } = await admin
     .from("profiles")
-    .upsert({ anonymous_token: token }, { onConflict: "anonymous_token" })
+    .upsert({ anonymous_token: token, updated_at: iso(seenAt) }, { onConflict: "anonymous_token" })
     .select("id, created_at")
     .single<{ id: string; created_at: string }>();
 
@@ -183,7 +195,7 @@ async function dbRequireSession(admin: SupabaseClient): Promise<Session> {
     maxAge: 60 * 60 * 24 * 365
   });
 
-  return { id: data.id, createdAt: Date.parse(data.created_at) };
+  return { id: data.id, createdAt: Date.parse(data.created_at), seenAt };
 }
 
 async function dbFindActiveGameForPlayer(admin: SupabaseClient, playerId: string): Promise<string | undefined> {
@@ -209,15 +221,66 @@ async function dbCancelOpenRoomsForPlayer(admin: SupabaseClient, playerId: strin
   if (error) throw new Error(error.message);
 }
 
+function isMissingPresenceTable(error: { code?: string; message?: string }) {
+  return error.code === "42P01" || Boolean(error.message?.includes("presence_connections"));
+}
+
+async function dbLoadRecentlySeenProfileIds(admin: SupabaseClient) {
+  const { data, error } = await admin
+    .from("profiles")
+    .select("id")
+    .gte("updated_at", iso(Date.now() - presenceWindowMs));
+  if (error) throw new Error(error.message);
+  return new Set((data ?? []).map((profile) => profile.id as string));
+}
+
+async function dbLoadOnlineProfileIds(admin: SupabaseClient) {
+  const activeSince = iso(Date.now() - presenceStaleMs);
+  const { error: pruneError } = await admin.from("presence_connections").delete().lt("updated_at", activeSince);
+  if (pruneError) {
+    if (isMissingPresenceTable(pruneError)) return dbLoadRecentlySeenProfileIds(admin);
+    throw new Error(pruneError.message);
+  }
+
+  const { data, error } = await admin.from("presence_connections").select("profile_id").gte("updated_at", activeSince);
+  if (error) {
+    if (isMissingPresenceTable(error)) return dbLoadRecentlySeenProfileIds(admin);
+    throw new Error(error.message);
+  }
+
+  return new Set((data ?? []).map((connection) => connection.profile_id as string));
+}
+
+async function dbPruneStaleQueue(admin: SupabaseClient) {
+  const [onlineProfileIds, { data, error }] = await Promise.all([
+    dbLoadOnlineProfileIds(admin),
+    admin.from("match_queue").select("profile_id")
+  ]);
+  if (error) throw new Error(error.message);
+  const queuedProfileIds = (data ?? []).map((row) => row.profile_id as string);
+  if (queuedProfileIds.length === 0) return;
+
+  const staleProfileIds = queuedProfileIds.filter((profileId) => !onlineProfileIds.has(profileId));
+  if (staleProfileIds.length === 0) return;
+
+  const { error: deleteError } = await admin.from("match_queue").delete().in("profile_id", staleProfileIds);
+  if (deleteError) throw new Error(deleteError.message);
+}
+
 export async function requireSession(): Promise<Session> {
   const admin = supabaseAdmin();
   if (admin) return dbRequireSession(admin);
 
   const jar = await cookies();
   const existing = jar.get(cookieName)?.value;
-  if (existing && store.sessions.has(existing)) return store.sessions.get(existing)!;
+  const seenAt = Date.now();
+  if (existing && store.sessions.has(existing)) {
+    const session = store.sessions.get(existing)!;
+    session.seenAt = seenAt;
+    return session;
+  }
 
-  const session = { id: id("anon"), createdAt: Date.now() };
+  const session = { id: id("anon"), createdAt: seenAt, seenAt };
   store.sessions.set(session.id, session);
   jar.set(cookieName, session.id, {
     httpOnly: true,
@@ -229,32 +292,88 @@ export async function requireSession(): Promise<Session> {
   return session;
 }
 
+export async function openPresenceConnection() {
+  const session = await requireSession();
+  const connectionId = id("presence");
+  await touchPresenceConnection(connectionId, session.id);
+  return { session, connectionId };
+}
+
+export async function touchPresenceConnection(connectionId: string, sessionId: string) {
+  const seenAt = Date.now();
+  const admin = supabaseAdmin();
+  if (admin) {
+    const { error } = await admin.from("presence_connections").upsert(
+      {
+        id: connectionId,
+        profile_id: sessionId,
+        updated_at: iso(seenAt)
+      },
+      { onConflict: "id" }
+    );
+    if (error) {
+      if (isMissingPresenceTable(error)) return;
+      throw new Error(error.message);
+    }
+    return;
+  }
+
+  store.presenceConnections.set(connectionId, {
+    sessionId,
+    connectedAt: store.presenceConnections.get(connectionId)?.connectedAt ?? seenAt,
+    seenAt
+  });
+}
+
+export async function closePresenceConnection(connectionId: string) {
+  const admin = supabaseAdmin();
+  if (admin) {
+    const { error } = await admin.from("presence_connections").delete().eq("id", connectionId);
+    if (error && !isMissingPresenceTable(error)) throw new Error(error.message);
+    return;
+  }
+
+  store.presenceConnections.delete(connectionId);
+}
+
+function localOnlineSessionIds() {
+  const presenceActiveSince = Date.now() - presenceStaleMs;
+  for (const [connectionId, connection] of store.presenceConnections) {
+    if (connection.seenAt <= presenceActiveSince) store.presenceConnections.delete(connectionId);
+  }
+
+  return new Set(
+    [...store.presenceConnections.values()]
+      .filter((connection) => connection.seenAt > presenceActiveSince)
+      .map((connection) => connection.sessionId)
+  );
+}
+
 export async function publicStats() {
   const admin = supabaseAdmin();
   if (admin) {
-    const [{ count: waitingInQueue }, { count: activeGames }] = await Promise.all([
-      admin.from("match_queue").select("id", { count: "exact", head: true }),
-      admin.from("games").select("id", { count: "exact", head: true }).neq("status", "finished")
+    const [onlineProfileIds, { count: activeGames }, { data: queuedProfiles, error: queueError }] = await Promise.all([
+      dbLoadOnlineProfileIds(admin),
+      admin.from("games").select("id", { count: "exact", head: true }).neq("status", "finished"),
+      admin.from("match_queue").select("profile_id")
     ]);
+    if (queueError) throw new Error(queueError.message);
+
+    const queuedProfileIds = (queuedProfiles ?? []).map((row) => row.profile_id as string);
+
     return {
-      online: 0,
-      waitingInQueue: waitingInQueue ?? 0,
+      online: onlineProfileIds.size,
+      waitingInQueue: queuedProfileIds.filter((profileId) => onlineProfileIds.has(profileId)).length,
       activeGames: activeGames ?? 0
     };
   }
 
-  const activeSince = Date.now() - 60_000;
-  const online = [...store.games.values()].reduce(
-    (count, game) =>
-      count +
-      Number(game.players.A.connectedAt > activeSince) +
-      Number(game.players.B.connectedAt > activeSince),
-    0
-  );
+  for (const game of store.games.values()) advanceClock(game);
+  const onlineSessionIds = localOnlineSessionIds();
 
   return {
-    online,
-    waitingInQueue: store.queue ? 1 : 0,
+    online: onlineSessionIds.size,
+    waitingInQueue: store.queue && onlineSessionIds.has(store.queue.playerId) ? 1 : 0,
     activeGames: [...store.games.values()].filter((game) => game.status !== "finished").length
   };
 }
@@ -267,6 +386,10 @@ function findActiveGameForPlayer(playerId: string): GameState | undefined {
 
 function cancelQueueForPlayer(playerId: string) {
   if (store.queue?.playerId === playerId) store.queue = undefined;
+}
+
+function pruneStaleQueue() {
+  if (store.queue && !localOnlineSessionIds().has(store.queue.playerId)) store.queue = undefined;
 }
 
 function cancelOpenRoomsForPlayer(playerId: string) {
@@ -397,6 +520,7 @@ export async function joinQueue() {
       return { session, status: "matched" as const, gameId: activeGameId };
     }
     await dbCancelOpenRoomsForPlayer(admin, session.id);
+    await dbPruneStaleQueue(admin);
 
     const { data, error } = await admin.rpc("dequeue_match", { requesting_profile: session.id });
     if (error) throw new Error(error.message);
@@ -414,6 +538,7 @@ export async function joinQueue() {
   const activeGame = findActiveGameForPlayer(session.id);
   if (activeGame) return { session, status: "matched" as const, gameId: activeGame.id };
   cancelOpenRoomsForPlayer(session.id);
+  pruneStaleQueue();
 
   const waiting = store.queue;
   if (waiting && waiting.playerId !== session.id) {
@@ -464,7 +589,9 @@ export async function getMatchStatus() {
   const session = await requireSession();
   const activeGame = findActiveGameForPlayer(session.id);
   if (activeGame) return { session, status: "matched" as const, gameId: activeGame.id };
-  return { session, status: store.queue?.playerId === session.id ? ("queued" as const) : ("idle" as const) };
+  if (store.queue?.playerId === session.id) return { session, status: "queued" as const };
+  pruneStaleQueue();
+  return { session, status: "idle" as const };
 }
 
 export async function getGame(gameIdValue: string) {
@@ -566,7 +693,8 @@ export function sanitizeGame(game: GameState, viewerId: string) {
   const publicPlayer = (player: GameState["players"][PlayerSlot]) => ({
     position: player.position,
     goal: player.goal,
-    missedTurns: player.missedTurns
+    missedTurns: player.missedTurns,
+    connectedAt: player.connectedAt
   });
   const wallHits =
     game.status === "finished"

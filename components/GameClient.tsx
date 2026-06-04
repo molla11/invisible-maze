@@ -23,6 +23,7 @@ import Link from "next/link";
 import type { CSSProperties } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  DISCONNECT_FORFEIT_MS,
   EMOTE_LIMIT,
   EMOTE_WINDOW_MS,
   MATCH_READY_MS,
@@ -38,7 +39,7 @@ import { ko } from "@/lib/i18n/ko";
 type PublicGame = {
   id: string;
   status: string;
-  players: Record<PlayerSlot, { position: Point; goal: Point; missedTurns: number }>;
+  players: Record<PlayerSlot, { position: Point; goal: Point; missedTurns: number; connectedAt: number }>;
   currentTurn?: PlayerSlot;
   coinTossStartsAt: number;
   coinRevealAt: number;
@@ -199,6 +200,7 @@ export function GameClient({ gameId }: { gameId: string }) {
   const [matchPending, setMatchPending] = useState(false);
   const [rematchPending, setRematchPending] = useState(false);
   const [emotePending, setEmotePending] = useState<EmoteType | null>(null);
+  const [pingMs, setPingMs] = useState<number | null>(null);
   const [endNotice, setEndNotice] = useState("");
   const [endQueued, setEndQueued] = useState(false);
   const [boardEmotes, setBoardEmotes] = useState<
@@ -220,6 +222,12 @@ export function GameClient({ gameId }: { gameId: string }) {
     seenEventIds.current = null;
     setBoardEmotes([]);
   }, [gameId]);
+
+  useEffect(() => {
+    const source = new EventSource("/api/presence");
+    source.onerror = () => undefined;
+    return () => source.close();
+  }, []);
 
   useEffect(() => {
     const source = new EventSource(`/api/game/${gameId}/events`);
@@ -245,9 +253,34 @@ export function GameClient({ gameId }: { gameId: string }) {
     };
   }, [gameId]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function measurePing() {
+      const startedAt = performance.now();
+      try {
+        const response = await fetch(`/api/game/${gameId}/heartbeat`, {
+          method: "POST",
+          cache: "no-store"
+        });
+        if (!cancelled) setPingMs(response.ok ? Math.round(performance.now() - startedAt) : null);
+      } catch {
+        if (!cancelled) setPingMs(null);
+      }
+    }
+
+    void measurePing();
+    const timer = window.setInterval(measurePing, 5_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [gameId]);
+
   const canAct = game?.status === "playing" && game.viewerSlot === game.currentTurn;
   const secondsLeft = Math.min(TURN_SECONDS, Math.max(0, Math.ceil(((game?.turnDeadlineAt ?? now) - now) / 1000)));
   const viewerPosition = game?.viewerSlot ? game.players[game.viewerSlot].position : undefined;
+  const opponentSlot: PlayerSlot | undefined = game?.viewerSlot ? (game.viewerSlot === "A" ? "B" : "A") : undefined;
   const stepsLeft = Math.max(0, 3 - (game?.turnStepsUsed ?? 0));
   const playersOverlap = game ? samePoint(game.players.A.position, game.players.B.position) : false;
   const isWaitingPhase = game?.status === "waiting";
@@ -457,6 +490,17 @@ export function GameClient({ gameId }: { gameId: string }) {
   const recentEmoteCount = viewerEmotes?.sentAt.filter((sentAt) => now - sentAt < EMOTE_WINDOW_MS).length ?? 0;
   const emoteBlocked = Boolean(viewerEmotes?.blockedUntil && now < viewerEmotes.blockedUntil);
   const emotesDisabled = emotePending !== null || emoteBlocked || recentEmoteCount >= EMOTE_LIMIT;
+  const viewerMissedTurns = game?.viewerSlot ? game.players[game.viewerSlot].missedTurns : 0;
+  const opponentMissedTurns = opponentSlot && game ? game.players[opponentSlot].missedTurns : 0;
+  const opponentConnectedAt = opponentSlot && game ? game.players[opponentSlot].connectedAt : 0;
+  const opponentDisconnectedFor = opponentConnectedAt > 0 ? now - opponentConnectedAt : 0;
+  const opponentDisconnectSecondsLeft = Math.max(0, Math.ceil((DISCONNECT_FORFEIT_MS - opponentDisconnectedFor) / 1000));
+  const opponentDisconnected =
+    game?.status === "playing" &&
+    Boolean(opponentSlot) &&
+    opponentConnectedAt > 0 &&
+    opponentDisconnectedFor > 5_000 &&
+    opponentDisconnectedFor < DISCONNECT_FORFEIT_MS;
   const statusNotice =
     error || (isWaitingPhase ? "상대가 게임 화면에 들어오면 시작합니다." : isCoinPhase ? (coinRevealed ? "게임 시작을 준비하세요." : "선공을 결정하고 있습니다.") : "");
 
@@ -686,7 +730,32 @@ export function GameClient({ gameId }: { gameId: string }) {
               <span>남은 시간</span>
               <strong>{game.status === "playing" ? secondsLeft : isCoinPhase && coinRevealed ? startCountdown : 0}</strong>
             </div>
+            <div>
+              <span>Ping</span>
+              <strong>{pingMs === null ? "-" : `${pingMs}ms`}</strong>
+            </div>
           </div>
+
+          {game.status === "playing" ? (
+            <div className="risk-panel" aria-label="패배 조건 상태">
+              <div>
+                <span>내 시간초과</span>
+                <strong>{viewerMissedTurns}/3</strong>
+              </div>
+              <div>
+                <span>상대 시간초과</span>
+                <strong>{opponentMissedTurns}/3</strong>
+              </div>
+              <p>시간 초과 3번 시 패배합니다.</p>
+            </div>
+          ) : null}
+
+          {opponentDisconnected ? (
+            <div className="disconnect-alert" role="status">
+              <strong>상대 연결이 끊겼습니다.</strong>
+              <span>{opponentDisconnectSecondsLeft}초 안에 돌아오지 않으면 자동 승리합니다.</span>
+            </div>
+          ) : null}
 
           {statusNotice ? <p className="notice">{statusNotice}</p> : null}
 

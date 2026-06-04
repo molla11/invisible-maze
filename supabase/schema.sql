@@ -19,6 +19,13 @@ create table public.match_queue (
   unique (profile_id)
 );
 
+create table public.presence_connections (
+  id text primary key,
+  profile_id uuid not null references public.profiles(id) on delete cascade,
+  connected_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table public.rooms (
   id uuid primary key default gen_random_uuid(),
   code text not null unique,
@@ -69,12 +76,15 @@ create table public.game_events (
 
 alter table public.profiles enable row level security;
 alter table public.match_queue enable row level security;
+alter table public.presence_connections enable row level security;
 alter table public.rooms enable row level security;
 alter table public.games enable row level security;
 alter table public.game_players enable row level security;
 alter table public.game_events enable row level security;
 
 create index game_events_game_id_created_at_idx on public.game_events (game_id, created_at);
+create index presence_connections_profile_id_idx on public.presence_connections (profile_id);
+create index presence_connections_updated_at_idx on public.presence_connections (updated_at);
 create index rooms_code_idx on public.rooms (code);
 create index game_players_profile_id_idx on public.game_players (profile_id);
 
@@ -87,6 +97,14 @@ as $$
 declare
   waiting_profile uuid;
 begin
+  delete from public.match_queue queue
+  where not exists (
+    select 1
+      from public.presence_connections connection
+     where connection.profile_id = queue.profile_id
+       and connection.updated_at >= now() - interval '25 seconds'
+  );
+
   delete from public.match_queue where profile_id = requesting_profile;
 
   select profile_id

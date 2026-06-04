@@ -1,6 +1,18 @@
 alter table public.games
   add column if not exists state jsonb;
 
+create table if not exists public.presence_connections (
+  id text primary key,
+  profile_id uuid not null references public.profiles(id) on delete cascade,
+  connected_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.presence_connections enable row level security;
+
+create index if not exists presence_connections_profile_id_idx on public.presence_connections (profile_id);
+create index if not exists presence_connections_updated_at_idx on public.presence_connections (updated_at);
+
 create or replace function public.dequeue_match(requesting_profile uuid)
 returns table(opponent_id uuid)
 language plpgsql
@@ -10,6 +22,14 @@ as $$
 declare
   waiting_profile uuid;
 begin
+  delete from public.match_queue queue
+  where not exists (
+    select 1
+      from public.presence_connections connection
+     where connection.profile_id = queue.profile_id
+       and connection.updated_at >= now() - interval '25 seconds'
+  );
+
   delete from public.match_queue where profile_id = requesting_profile;
 
   select profile_id
