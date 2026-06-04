@@ -36,6 +36,8 @@ import {
 } from "@/lib/game/types";
 import { ko } from "@/lib/i18n/ko";
 
+const DISCONNECT_WARNING_MS = 15_000;
+
 type PublicGame = {
   id: string;
   status: string;
@@ -526,7 +528,7 @@ export function GameClient({ gameId }: { gameId: string }) {
     game?.status === "playing" &&
     Boolean(opponentSlot) &&
     opponentConnectedAt > 0 &&
-    opponentDisconnectedFor > 5_000 &&
+    opponentDisconnectedFor > DISCONNECT_WARNING_MS &&
     opponentDisconnectedFor < DISCONNECT_FORFEIT_MS;
   const statusNotice =
     error || (isWaitingPhase ? "상대가 게임 화면에 들어오면 시작합니다." : isCoinPhase ? (coinRevealed ? "게임 시작을 준비하세요." : "선공을 결정하고 있습니다.") : "");
