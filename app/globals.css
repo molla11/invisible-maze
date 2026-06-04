@@ -226,6 +226,11 @@ button:disabled {
   min-width: 0;
 }
 
+.match-wrapper {
+  display: grid;
+  gap: 10px;
+}
+
 .match-status:disabled {
   opacity: 1;
 }
@@ -384,7 +389,6 @@ button:disabled {
   min-height: 65px;
   align-items: center;
   justify-content: flex-end;
-  margin-top: 12px;
 }
 
 .strong-notice {

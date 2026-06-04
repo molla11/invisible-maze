@@ -268,27 +268,30 @@ export function HomeClient({ initialStats }: { initialStats: Stats }) {
       <section className="hero">
         <div className="entry-panel">
           <div className="actions">
-            {queued ? (
-              <div className="match-control is-queueing">
-                <button className="button primary-action match-status" disabled type="button">
+            <div className="match-wrapper">
+              {queued ? (
+                <div className="match-control is-queueing">
+                  <button className="button primary-action match-status" disabled type="button">
+                    <Radar size={22} />
+                    <span>매칭 중</span>
+                    <span className="queue-dots" aria-hidden="true">
+                      <span />
+                      <span />
+                      <span />
+                    </span>
+                  </button>
+                  <button className="button match-cancel" disabled={busy} onClick={cancelMatch} type="button">
+                    매칭 취소
+                  </button>
+                </div>
+              ) : (
+                <button className="button primary-action" disabled={busy} onClick={autoMatch}>
                   <Radar size={22} />
-                  <span>매칭 중</span>
-                  <span className="queue-dots" aria-hidden="true">
-                    <span />
-                    <span />
-                    <span />
-                  </span>
+                  <span>{ko.autoMatch}</span>
                 </button>
-                <button className="button match-cancel" disabled={busy} onClick={cancelMatch} type="button">
-                  매칭 취소
-                </button>
-              </div>
-            ) : (
-              <button className="button primary-action" disabled={busy} onClick={autoMatch}>
-                <Radar size={22} />
-                <span>{ko.autoMatch}</span>
-              </button>
-            )}
+              )}
+              {turnstileSiteKey && !turnstileVerified ? <div ref={turnstileContainerRef} className="turnstile-box" /> : null}
+            </div>
             <div className="invite-row">
               <button className="button secondary" disabled={busy} onClick={createInvite}>
                 <DoorOpen size={18} />
@@ -333,7 +336,6 @@ export function HomeClient({ initialStats }: { initialStats: Stats }) {
               </div>
             </div>
           </div>
-          {turnstileSiteKey && !turnstileVerified ? <div ref={turnstileContainerRef} className="turnstile-box" /> : null}
           {notice ? <p className="notice strong-notice">{notice}</p> : null}
           <div className="compact-stats" aria-label="서비스 상태">
             <div>
