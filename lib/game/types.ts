@@ -26,7 +26,7 @@ export type GameEventType =
   | "rematch_requested"
   | "rematch_started"
   | "win";
-export type EmoteType = "hello" | "nice" | "oops" | "thinking";
+export type EmoteType = "hello" | "nice" | "oops" | "thinking" | "smile" | "cry";
 
 export type Point = {
   x: number;

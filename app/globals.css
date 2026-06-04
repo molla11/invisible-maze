@@ -555,6 +555,7 @@ button:disabled {
 
 .goal,
 .piece,
+.board-emote-burst,
 .wall-flash,
 .maze-wall {
   position: absolute;
@@ -632,6 +633,97 @@ button:disabled {
   line-height: 1;
   transform: translateX(-50%);
   box-shadow: 0 4px 8px rgb(24 26 31 / 12%);
+}
+
+.board-emote-burst {
+  z-index: 5;
+  width: 15%;
+  height: 15%;
+  min-width: 48px;
+  min-height: 48px;
+  transform: translate(calc(-50% + var(--piece-offset-x, 0%)), -50%);
+}
+
+.board-emote-icon {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  font-size: clamp(22px, 4.2vw, 34px);
+  line-height: 1;
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.88);
+  filter:
+    drop-shadow(0 1px 0 rgb(255 253 247 / 94%))
+    drop-shadow(0 5px 8px rgb(24 26 31 / 20%));
+  animation: board-emote-float 2400ms ease-out forwards;
+}
+
+.board-emote-icon.item-1 {
+  --emote-x: -20px;
+  --emote-y: -46px;
+}
+
+.board-emote-icon.item-2 {
+  --emote-x: 22px;
+  --emote-y: -42px;
+  animation-delay: 140ms;
+}
+
+.board-emote-icon.item-3 {
+  --emote-x: 0px;
+  --emote-y: -66px;
+  animation-delay: 280ms;
+}
+
+.board-emote-label {
+  position: absolute;
+  top: -18px;
+  left: 50%;
+  padding: 4px 8px;
+  color: var(--ink);
+  background: rgb(255 253 247 / 96%);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  box-shadow: 0 8px 20px rgb(24 26 31 / 14%);
+  font-size: 12px;
+  font-weight: 820;
+  line-height: 1;
+  opacity: 0;
+  transform: translateX(-50%) scale(0.96);
+  animation: board-emote-label 2400ms ease-out forwards;
+  white-space: nowrap;
+}
+
+@keyframes board-emote-float {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.88);
+  }
+  18% {
+    opacity: 1;
+    transform: translate(calc(-50% + var(--emote-x) * 0.28), calc(-50% + var(--emote-y) * 0.28)) scale(1);
+  }
+  72% {
+    opacity: 1;
+    transform: translate(calc(-50% + var(--emote-x) * 0.72), calc(-50% + var(--emote-y) * 0.72)) scale(1.03);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(-50% + var(--emote-x)), calc(-50% + var(--emote-y))) scale(1.06);
+  }
+}
+
+@keyframes board-emote-label {
+  0%,
+  100% {
+    opacity: 0;
+    transform: translateX(-50%) scale(0.96);
+  }
+  18%,
+  76% {
+    opacity: 1;
+    transform: translateX(-50%) scale(1);
+  }
 }
 
 .coin-overlay {
@@ -822,93 +914,6 @@ button:disabled {
 .opponent-icon {
   flex: 0 0 auto;
   color: var(--muted);
-}
-
-.opponent-emote-burst {
-  position: absolute;
-  inset: 0 auto 0 0;
-  z-index: 2;
-  width: 96px;
-  pointer-events: none;
-}
-
-.opponent-emote-icon {
-  position: absolute;
-  top: 50%;
-  left: 29px;
-  font-size: 30px;
-  line-height: 1;
-  opacity: 0;
-  transform: translate(-50%, -50%) scale(0.88);
-  animation: opponent-emote-float 2400ms ease-out forwards;
-}
-
-.opponent-emote-icon.item-1 {
-  --emote-x: -14px;
-  --emote-y: -24px;
-}
-
-.opponent-emote-icon.item-2 {
-  --emote-x: 14px;
-  --emote-y: -20px;
-  animation-delay: 160ms;
-}
-
-.opponent-emote-icon.item-3 {
-  --emote-x: 0px;
-  --emote-y: 18px;
-  animation-delay: 320ms;
-}
-
-.opponent-emote-label {
-  position: absolute;
-  top: 50%;
-  left: 50px;
-  padding: 4px 8px;
-  color: var(--ink);
-  background: rgb(255 253 247 / 96%);
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  box-shadow: 0 8px 20px rgb(24 26 31 / 12%);
-  font-size: 12px;
-  font-weight: 820;
-  line-height: 1;
-  opacity: 0;
-  transform: translateY(-50%) scale(0.96);
-  animation: opponent-emote-label 2400ms ease-out forwards;
-  white-space: nowrap;
-}
-
-@keyframes opponent-emote-float {
-  0% {
-    opacity: 0;
-    transform: translate(-50%, -50%) scale(0.88);
-  }
-  20% {
-    opacity: 1;
-    transform: translate(calc(-50% + var(--emote-x) * 0.28), calc(-50% + var(--emote-y) * 0.28)) scale(1);
-  }
-  72% {
-    opacity: 1;
-    transform: translate(calc(-50% + var(--emote-x) * 0.72), calc(-50% + var(--emote-y) * 0.72)) scale(1.03);
-  }
-  100% {
-    opacity: 0;
-    transform: translate(calc(-50% + var(--emote-x)), calc(-50% + var(--emote-y))) scale(1.06);
-  }
-}
-
-@keyframes opponent-emote-label {
-  0%,
-  100% {
-    opacity: 0;
-    transform: translateY(-50%) scale(0.96);
-  }
-  18%,
-  76% {
-    opacity: 1;
-    transform: translateY(-50%) scale(1);
-  }
 }
 
 .opponent-profile strong {

@@ -8,7 +8,7 @@ type Context = {
   params: Promise<{ gameId: string }>;
 };
 
-const validEmotes = new Set<EmoteType>(["hello", "nice", "oops", "thinking"]);
+const validEmotes = new Set<EmoteType>(["hello", "nice", "oops", "thinking", "smile", "cry"]);
 
 export async function POST(request: Request, context: Context) {
   const body = (await request.json().catch(() => ({}))) as { emote?: EmoteType };

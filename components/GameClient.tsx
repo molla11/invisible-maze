@@ -9,9 +9,11 @@ import {
   ChessPawn,
   CircleAlert,
   Crown,
+  Frown,
   Hand,
   Radar,
   RotateCcw,
+  Smile,
   Swords,
   ThumbsUp,
   User,
@@ -148,6 +150,8 @@ function emoteLabel(emote: unknown) {
   if (emote === "nice") return "좋아요";
   if (emote === "oops") return "아차";
   if (emote === "thinking") return "생각 중";
+  if (emote === "smile") return "웃음";
+  if (emote === "cry") return "울음";
   return String(emote);
 }
 
@@ -156,6 +160,8 @@ function emoteEmoji(emote: unknown) {
   if (emote === "nice") return "👍";
   if (emote === "oops") return "!";
   if (emote === "thinking") return "💭";
+  if (emote === "smile") return "😄";
+  if (emote === "cry") return "😢";
   return "•";
 }
 
@@ -174,7 +180,9 @@ const emoteOptions: Array<{ emote: EmoteType; label: string; Icon: LucideIcon }>
   { emote: "hello", label: "인사", Icon: Hand },
   { emote: "nice", label: "좋아요", Icon: ThumbsUp },
   { emote: "oops", label: "아차", Icon: CircleAlert },
-  { emote: "thinking", label: "생각 중", Icon: Brain }
+  { emote: "thinking", label: "생각 중", Icon: Brain },
+  { emote: "smile", label: "웃음", Icon: Smile },
+  { emote: "cry", label: "울음", Icon: Frown }
 ];
 
 const directionIcons: Record<Direction, LucideIcon> = {
@@ -193,22 +201,24 @@ export function GameClient({ gameId }: { gameId: string }) {
   const [emotePending, setEmotePending] = useState<EmoteType | null>(null);
   const [endNotice, setEndNotice] = useState("");
   const [endQueued, setEndQueued] = useState(false);
-  const [opponentEmote, setOpponentEmote] = useState<{ id: string; label: string; emoji: string } | null>(null);
+  const [boardEmotes, setBoardEmotes] = useState<
+    Array<{ id: string; slot: PlayerSlot; point: Point; label: string; emoji: string; overlapped: boolean }>
+  >([]);
   const seenEventIds = useRef<Set<string> | null>(null);
   const actionPendingRef = useRef(false);
 
-  const showOpponentEmote = useCallback((emote: unknown) => {
+  const showBoardEmote = useCallback((slot: PlayerSlot, point: Point, overlapped: boolean, emote: unknown) => {
     const id = crypto.randomUUID();
-    setOpponentEmote({ id, label: emoteLabel(emote), emoji: emoteEmoji(emote) });
+    setBoardEmotes((current) => [...current, { id, slot, point, overlapped, label: emoteLabel(emote), emoji: emoteEmoji(emote) }]);
 
     window.setTimeout(() => {
-      setOpponentEmote((current) => (current?.id === id ? null : current));
+      setBoardEmotes((current) => current.filter((item) => item.id !== id));
     }, 2400);
   }, []);
 
   useEffect(() => {
     seenEventIds.current = null;
-    setOpponentEmote(null);
+    setBoardEmotes([]);
   }, [gameId]);
 
   useEffect(() => {
@@ -429,11 +439,12 @@ export function GameClient({ gameId }: { gameId: string }) {
       if (seenEventIds.current.has(event.id)) continue;
       seenEventIds.current.add(event.id);
 
-      if (event.type === "emote" && event.payload.player !== game.viewerSlot) {
-        showOpponentEmote(event.payload.emote);
+      if (event.type === "emote" && (event.payload.player === "A" || event.payload.player === "B")) {
+        const slot = event.payload.player;
+        showBoardEmote(slot, game.players[slot].position, playersOverlap, event.payload.emote);
       }
     }
-  }, [game, showOpponentEmote]);
+  }, [game, playersOverlap, showBoardEmote]);
 
   const recentEvents = useMemo(() => [...(game?.events ?? [])].slice(-8).reverse(), [game?.events]);
   const rematchRequested = Boolean(game?.viewerSlot && game.rematch?.requestedBy.includes(game.viewerSlot));
@@ -532,6 +543,22 @@ export function GameClient({ gameId }: { gameId: string }) {
                 </div>
               ))}
 
+              {boardEmotes.map((item) => (
+                <div
+                  aria-label={`${teamName(item.slot)} 감정 표현: ${item.label}`}
+                  className={`board-emote-burst ${item.slot.toLowerCase()}`}
+                  key={item.id}
+                  style={pieceStyle(item.point, item.slot, item.overlapped)}
+                >
+                  {[0, 1, 2].map((index) => (
+                    <span className={`board-emote-icon item-${index + 1}`} key={index}>
+                      {item.emoji}
+                    </span>
+                  ))}
+                  <span className="board-emote-label">{item.label}</span>
+                </div>
+              ))}
+
               {isCoinPhase ? (
                 <div className="coin-overlay" aria-live="polite">
                   <div className="coin-card" style={coinCardStyle}>
@@ -626,16 +653,6 @@ export function GameClient({ gameId }: { gameId: string }) {
         <aside className="side-panel">
           <div className="opponent-profile">
             <User className="opponent-icon" size={30} aria-hidden="true" />
-            {opponentEmote ? (
-              <span className="opponent-emote-burst" key={opponentEmote.id} aria-label={`상대 감정 표현: ${opponentEmote.label}`}>
-                {[0, 1, 2].map((index) => (
-                  <span className={`opponent-emote-icon item-${index + 1}`} key={index}>
-                    {opponentEmote.emoji}
-                  </span>
-                ))}
-                <span className="opponent-emote-label">{opponentEmote.label}</span>
-              </span>
-            ) : null}
             <strong>Guest</strong>
             {/* <div className="opponent-meta" aria-label="상대 프로필 정보">
               <span>전적</span>
