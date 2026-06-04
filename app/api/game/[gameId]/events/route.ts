@@ -37,7 +37,7 @@ export async function GET(request: Request, context: Context) {
           advanceClock(game);
 
           const publicGame = sanitizeGame(game, session.id);
-          const version = `${publicGame.updatedAt}:${publicGame.events.length}`;
+          const version = `${publicGame.updatedAt}:${publicGame.events.length}:${publicGame.players.A.connectedAt}:${publicGame.players.B.connectedAt}`;
 
           if (version !== lastVersion) {
             lastVersion = version;
