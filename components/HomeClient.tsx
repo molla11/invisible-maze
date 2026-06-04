@@ -305,118 +305,120 @@ export function HomeClient({ initialStats }: { initialStats: Stats }) {
 
       <section className="hero">
         <GamePreview />
-        <div className="entry-panel">
-          <section className="entry-hero" aria-label="게임 소개">
-            <span>route finding game in 8 x 8 maze</span>
-            <h1>Invisible Maze</h1>
-            <p>보이지 않는 미로에서 먼저 길을 찾으세요.</p>
-          </section>
-          <div className="actions">
-            <div className="match-wrapper">
-              {queued ? (
-                <div className="match-control is-queueing">
-                  <button className="button primary-action match-status" disabled type="button">
-                    <Radar size={22} />
-                    <span>매칭 중</span>
-                    <span className="queue-dots" aria-hidden="true">
-                      <span />
-                      <span />
-                      <span />
-                    </span>
-                  </button>
-                  <button className="button match-cancel" disabled={busy} onClick={cancelMatch} type="button">
-                    매칭 취소
-                  </button>
-                </div>
-              ) : (
-                <button className="button primary-action" disabled={busy} onClick={autoMatch}>
-                  <Radar size={22} />
-                  <span>{ko.autoMatch}</span>
-                </button>
-              )}
-            </div>
-            <div className="invite-row">
-              <button className="button secondary" disabled={busy} onClick={createInvite}>
-                <DoorOpen size={18} />
-                {ko.createRoom}
-              </button>
-              <div className="input-row">
-                <div className="code-field">
-                  <input
-                    className="input"
-                    maxLength={5}
-                    placeholder={ko.roomCode}
-                    readOnly={inviteCodeCreated}
-                    value={displayedCode}
-                    onChange={(event) => {
-                      setInviteCodeCreated(false);
-                      setCodeMasked(false);
-                      setCode(event.target.value.toUpperCase());
-                    }}
-                  />
-                  {inviteCodeCreated ? (
-                    <button
-                      aria-label={codeMasked ? "초대 코드 보기" : "초대 코드 숨기기"}
-                      className="code-visibility-button"
-                      onClick={() => setCodeMasked((masked) => !masked)}
-                      title={codeMasked ? "초대 코드 보기" : "초대 코드 숨기기"}
-                      type="button"
-                    >
-                      {codeMasked ? <Eye size={18} /> : <EyeOff size={18} />}
+        <div className="entry-column">
+          <div className="entry-panel">
+            <section className="entry-hero" aria-label="게임 소개">
+              <span>route finding game in 8 x 8 maze</span>
+              <h1>Invisible Maze</h1>
+              <p>보이지 않는 미로에서 먼저 길을 찾으세요.</p>
+            </section>
+            <div className="actions">
+              <div className="match-wrapper">
+                {queued ? (
+                  <div className="match-control is-queueing">
+                    <button className="button primary-action match-status" disabled type="button">
+                      <Radar size={22} />
+                      <span>매칭 중</span>
+                      <span className="queue-dots" aria-hidden="true">
+                        <span />
+                        <span />
+                        <span />
+                      </span>
                     </button>
-                  ) : null}
+                    <button className="button match-cancel" disabled={busy} onClick={cancelMatch} type="button">
+                      매칭 취소
+                    </button>
+                  </div>
+                ) : (
+                  <button className="button primary-action" disabled={busy} onClick={autoMatch}>
+                    <Radar size={22} />
+                    <span>{ko.autoMatch}</span>
+                  </button>
+                )}
+              </div>
+              <div className="invite-row">
+                <button className="button secondary" disabled={busy} onClick={createInvite}>
+                  <DoorOpen size={18} />
+                  {ko.createRoom}
+                </button>
+                <div className="input-row">
+                  <div className="code-field">
+                    <input
+                      className="input"
+                      maxLength={5}
+                      placeholder={ko.roomCode}
+                      readOnly={inviteCodeCreated}
+                      value={displayedCode}
+                      onChange={(event) => {
+                        setInviteCodeCreated(false);
+                        setCodeMasked(false);
+                        setCode(event.target.value.toUpperCase());
+                      }}
+                    />
+                    {inviteCodeCreated ? (
+                      <button
+                        aria-label={codeMasked ? "초대 코드 보기" : "초대 코드 숨기기"}
+                        className="code-visibility-button"
+                        onClick={() => setCodeMasked((masked) => !masked)}
+                        title={codeMasked ? "초대 코드 보기" : "초대 코드 숨기기"}
+                        type="button"
+                      >
+                        {codeMasked ? <Eye size={18} /> : <EyeOff size={18} />}
+                      </button>
+                    ) : null}
+                  </div>
+                  <button
+                    aria-label={inviteCodeCreated ? "초대 코드 복사" : undefined}
+                    className={`button ${inviteCodeCreated ? "icon-action" : ""}`}
+                    disabled={busy || !code.trim()}
+                    onClick={inviteCodeCreated ? copyInviteCode : joinInvite}
+                    title={inviteCodeCreated ? "초대 코드 복사" : undefined}
+                    type="button"
+                  >
+                    {inviteCodeCreated ? <Copy size={18} /> : ko.joinRoom}
+                  </button>
                 </div>
+              </div>
+            </div>
+            {notice ? <p className="notice strong-notice">{notice}</p> : null}
+            <div className="home-status-row">
+              <div className="rule-tooltip-wrap" ref={rulesTooltipRef}>
                 <button
-                  aria-label={inviteCodeCreated ? "초대 코드 복사" : undefined}
-                  className={`button ${inviteCodeCreated ? "icon-action" : ""}`}
-                  disabled={busy || !code.trim()}
-                  onClick={inviteCodeCreated ? copyInviteCode : joinInvite}
-                  title={inviteCodeCreated ? "초대 코드 복사" : undefined}
+                  aria-controls="rules-tooltip"
+                  aria-expanded={rulesOpen}
+                  className={`rule-button ${rulesOpen ? "is-open" : ""}`}
+                  onClick={() => setRulesOpen((open) => !open)}
                   type="button"
                 >
-                  {inviteCodeCreated ? <Copy size={18} /> : ko.joinRoom}
+                  <BookOpen size={17} />
+                  <span>Rule</span>
                 </button>
+                {rulesOpen ? (
+                  <div className="rule-tooltip" id="rules-tooltip" role="tooltip">
+                    <strong className="rule-tooltip-title">게임 룰</strong>
+                    <ul className="rule-tooltip-list">
+                      <li>상대보다 먼저 반대편 목표 칸에 도착하면 승리합니다.</li>
+                      <li>자기 턴마다 최대 3칸까지 이동할 수 있습니다.</li>
+                      <li>숨겨진 벽에 닿으면 그 벽이 공개되고 출발점으로 돌아갑니다.</li>
+                      <li>공개된 벽은 다시 보이지 않게 되니 미로를 잘 기억하세요.</li>
+                    </ul>
+                    <p className="rule-tooltip-footnote">시간 초과 3회, 이탈, 항복은 패배로 처리됩니다.</p>
+                  </div>
+                ) : null}
               </div>
-            </div>
-          </div>
-          {notice ? <p className="notice strong-notice">{notice}</p> : null}
-          <div className="home-status-row">
-            <div className="rule-tooltip-wrap" ref={rulesTooltipRef}>
-              <button
-                aria-controls="rules-tooltip"
-                aria-expanded={rulesOpen}
-                className={`rule-button ${rulesOpen ? "is-open" : ""}`}
-                onClick={() => setRulesOpen((open) => !open)}
-                type="button"
-              >
-                <BookOpen size={17} />
-                <span>Rule</span>
-              </button>
-              {rulesOpen ? (
-                <div className="rule-tooltip" id="rules-tooltip" role="tooltip">
-                  <strong className="rule-tooltip-title">게임 룰</strong>
-                  <ul className="rule-tooltip-list">
-                    <li>상대보다 먼저 반대편 목표 칸에 도착하면 승리합니다.</li>
-                    <li>자기 턴마다 최대 3칸까지 이동할 수 있습니다.</li>
-                    <li>숨겨진 벽에 닿으면 그 벽이 공개되고 출발점으로 돌아갑니다.</li>
-                    <li>공개된 벽은 다시 보이지 않게 되니 미로를 잘 기억하세요.</li>
-                  </ul>
-                  <p className="rule-tooltip-footnote">시간 초과 3회, 이탈, 항복은 패배로 처리됩니다.</p>
+              <div className="compact-stats" aria-label="서비스 상태">
+                <div>
+                  <span>접속자</span>
+                  <strong>{stats.online}</strong>
                 </div>
-              ) : null}
-            </div>
-            <div className="compact-stats" aria-label="서비스 상태">
-              <div>
-                <span>접속자</span>
-                <strong>{stats.online}</strong>
-              </div>
-              <div>
-                <span>매칭 중</span>
-                <strong>{stats.waitingInQueue}</strong>
-              </div>
-              <div>
-                <span>진행 중인 게임</span>
-                <strong>{stats.activeGames}</strong>
+                <div>
+                  <span>매칭 중</span>
+                  <strong>{stats.waitingInQueue}</strong>
+                </div>
+                <div>
+                  <span>진행 중인 게임</span>
+                  <strong>{stats.activeGames}</strong>
+                </div>
               </div>
             </div>
           </div>
