@@ -40,6 +40,7 @@ export function HomeClient({ initialStats }: { initialStats: Stats }) {
   const [turnstileToken, setTurnstileToken] = useState("");
   const [turnstileVerified, setTurnstileVerified] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
+  const [sessionReady, setSessionReady] = useState(false);
   const turnstileContainerRef = useRef<HTMLDivElement | null>(null);
   const turnstileWidgetRef = useRef<string | undefined>(undefined);
   const rulesTooltipRef = useRef<HTMLDivElement | null>(null);
@@ -80,18 +81,30 @@ export function HomeClient({ initialStats }: { initialStats: Stats }) {
   }
 
   useEffect(() => {
-    fetch("/api/session", { method: "POST" }).catch(() => undefined);
+    let cancelled = false;
+    fetch("/api/session", { method: "POST" })
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) setSessionReady(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     void refreshStats();
     const timer = setInterval(() => void refreshStats(), 2000);
     return () => clearInterval(timer);
   }, [refreshStats]);
 
   useEffect(() => {
+    if (!sessionReady) return;
     const source = new EventSource("/api/presence");
     source.onopen = () => void refreshStats();
     source.onerror = () => undefined;
     return () => source.close();
-  }, [refreshStats]);
+  }, [refreshStats, sessionReady]);
 
   useEffect(() => {
     renderTurnstile();

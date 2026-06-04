@@ -251,6 +251,28 @@ async function dbLoadOnlineProfileIds(admin: SupabaseClient) {
   return new Set((data ?? []).map((connection) => connection.profile_id as string));
 }
 
+async function dbLoadActiveGameCount(admin: SupabaseClient, onlineProfileIds: Set<string>) {
+  if (onlineProfileIds.size === 0) return 0;
+
+  const { data: playerRows, error: playerError } = await admin
+    .from("game_players")
+    .select("game_id")
+    .in("profile_id", [...onlineProfileIds]);
+  if (playerError) throw new Error(playerError.message);
+
+  const gameIds = [...new Set((playerRows ?? []).map((row) => row.game_id as string))];
+  if (gameIds.length === 0) return 0;
+
+  const { count, error } = await admin
+    .from("games")
+    .select("id", { count: "exact", head: true })
+    .in("id", gameIds)
+    .neq("status", "finished");
+  if (error) throw new Error(error.message);
+
+  return count ?? 0;
+}
+
 async function dbPruneStaleQueue(admin: SupabaseClient) {
   const [onlineProfileIds, { data, error }] = await Promise.all([
     dbLoadOnlineProfileIds(admin),
@@ -352,19 +374,19 @@ function localOnlineSessionIds() {
 export async function publicStats() {
   const admin = supabaseAdmin();
   if (admin) {
-    const [onlineProfileIds, { count: activeGames }, { data: queuedProfiles, error: queueError }] = await Promise.all([
+    const [onlineProfileIds, { data: queuedProfiles, error: queueError }] = await Promise.all([
       dbLoadOnlineProfileIds(admin),
-      admin.from("games").select("id", { count: "exact", head: true }).neq("status", "finished"),
       admin.from("match_queue").select("profile_id")
     ]);
     if (queueError) throw new Error(queueError.message);
 
     const queuedProfileIds = (queuedProfiles ?? []).map((row) => row.profile_id as string);
+    const activeGames = await dbLoadActiveGameCount(admin, onlineProfileIds);
 
     return {
       online: onlineProfileIds.size,
       waitingInQueue: queuedProfileIds.filter((profileId) => onlineProfileIds.has(profileId)).length,
-      activeGames: activeGames ?? 0
+      activeGames
     };
   }
 
@@ -374,7 +396,11 @@ export async function publicStats() {
   return {
     online: onlineSessionIds.size,
     waitingInQueue: store.queue && onlineSessionIds.has(store.queue.playerId) ? 1 : 0,
-    activeGames: [...store.games.values()].filter((game) => game.status !== "finished").length
+    activeGames: [...store.games.values()].filter(
+      (game) =>
+        game.status !== "finished" &&
+        (onlineSessionIds.has(game.players.A.id) || onlineSessionIds.has(game.players.B.id))
+    ).length
   };
 }
 

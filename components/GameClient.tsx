@@ -207,6 +207,7 @@ export function GameClient({ gameId }: { gameId: string }) {
   const [pingMs, setPingMs] = useState<number | null>(null);
   const [endNotice, setEndNotice] = useState("");
   const [endQueued, setEndQueued] = useState(false);
+  const [sessionReady, setSessionReady] = useState(false);
   const [boardEmotes, setBoardEmotes] = useState<
     Array<{ id: string; slot: PlayerSlot; point: Point; label: string; emoji: string; overlapped: boolean }>
   >([]);
@@ -229,12 +230,26 @@ export function GameClient({ gameId }: { gameId: string }) {
   }, [gameId]);
 
   useEffect(() => {
-    const source = new EventSource("/api/presence");
-    source.onerror = () => undefined;
-    return () => source.close();
+    let cancelled = false;
+    fetch("/api/session", { method: "POST" })
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) setSessionReady(true);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
+    if (!sessionReady) return;
+    const source = new EventSource("/api/presence");
+    source.onerror = () => undefined;
+    return () => source.close();
+  }, [sessionReady]);
+
+  useEffect(() => {
+    if (!sessionReady) return;
     const source = new EventSource(`/api/game/${gameId}/events`);
     const clock = setInterval(() => setNow(Date.now()), 250);
 
@@ -256,10 +271,12 @@ export function GameClient({ gameId }: { gameId: string }) {
       source.close();
       clearInterval(clock);
     };
-  }, [gameId]);
+  }, [gameId, sessionReady]);
 
   useEffect(() => {
     let cancelled = false;
+
+    if (!sessionReady) return;
 
     if (rematchWindowExpired) {
       setPingMs(null);
@@ -285,7 +302,7 @@ export function GameClient({ gameId }: { gameId: string }) {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [gameId, rematchWindowExpired]);
+  }, [gameId, rematchWindowExpired, sessionReady]);
 
   const canAct = game?.status === "playing" && game.viewerSlot === game.currentTurn;
   const secondsLeft = Math.min(TURN_SECONDS, Math.max(0, Math.ceil(((game?.turnDeadlineAt ?? now) - now) / 1000)));
