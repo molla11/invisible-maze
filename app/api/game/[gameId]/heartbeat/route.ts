@@ -16,3 +16,13 @@ export async function POST(_request: Request, context: Context) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "heartbeat_failed" }, { status: 404 });
   }
 }
+
+export async function HEAD(_request: Request, context: Context) {
+  try {
+    const { gameId } = await context.params;
+    await heartbeatGame(gameId);
+    return new Response(null, { status: 204 });
+  } catch {
+    return new Response(null, { status: 404 });
+  }
+}

@@ -177,6 +177,10 @@ function resultText(game: PublicGame) {
   return game.winner === game.viewerSlot ? "게임 승리" : "게임 패배";
 }
 
+function isRematchWindowExpired(game: PublicGame | null, at: number) {
+  return game?.status === "finished" && (!game.rematch || at >= game.rematch.expiresAt);
+}
+
 const emoteOptions: Array<{ emote: EmoteType; label: string; Icon: LucideIcon }> = [
   { emote: "hello", label: "인사", Icon: Hand },
   { emote: "nice", label: "좋아요", Icon: ThumbsUp },
@@ -208,6 +212,7 @@ export function GameClient({ gameId }: { gameId: string }) {
   >([]);
   const seenEventIds = useRef<Set<string> | null>(null);
   const actionPendingRef = useRef(false);
+  const rematchWindowExpired = isRematchWindowExpired(game, now);
 
   const showBoardEmote = useCallback((slot: PlayerSlot, point: Point, overlapped: boolean, emote: unknown) => {
     const id = crypto.randomUUID();
@@ -256,11 +261,16 @@ export function GameClient({ gameId }: { gameId: string }) {
   useEffect(() => {
     let cancelled = false;
 
+    if (rematchWindowExpired) {
+      setPingMs(null);
+      return;
+    }
+
     async function measurePing() {
       const startedAt = performance.now();
       try {
         const response = await fetch(`/api/game/${gameId}/heartbeat`, {
-          method: "POST",
+          method: "HEAD",
           cache: "no-store"
         });
         if (!cancelled) setPingMs(response.ok ? Math.round(performance.now() - startedAt) : null);
@@ -270,12 +280,12 @@ export function GameClient({ gameId }: { gameId: string }) {
     }
 
     void measurePing();
-    const timer = window.setInterval(measurePing, 5_000);
+    const timer = window.setInterval(measurePing, 1_000);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [gameId]);
+  }, [gameId, rematchWindowExpired]);
 
   const canAct = game?.status === "playing" && game.viewerSlot === game.currentTurn;
   const secondsLeft = Math.min(TURN_SECONDS, Math.max(0, Math.ceil(((game?.turnDeadlineAt ?? now) - now) / 1000)));
@@ -402,7 +412,7 @@ export function GameClient({ gameId }: { gameId: string }) {
 
   const sendEmote = useCallback(
     async (emote: EmoteType) => {
-      if (emotePending || !game?.viewerSlot) return;
+      if (emotePending || !game?.viewerSlot || isRematchWindowExpired(game, Date.now())) return;
       setEmotePending(emote);
       const response = await fetch(`/api/game/${gameId}/emote`, {
         method: "POST",
@@ -420,7 +430,7 @@ export function GameClient({ gameId }: { gameId: string }) {
       }
       setEmotePending(null);
     },
-    [emotePending, game?.viewerSlot, gameId]
+    [emotePending, game, gameId]
   );
 
   useEffect(() => {
@@ -485,11 +495,11 @@ export function GameClient({ gameId }: { gameId: string }) {
     game?.viewerSlot && game.rematch?.requestedBy.some((slot) => slot !== game.viewerSlot)
   );
   const rematchSecondsLeft = Math.max(0, Math.ceil(((game?.rematch?.expiresAt ?? now) - now) / 1000));
-  const rematchExpired = game?.status === "finished" && rematchSecondsLeft <= 0;
+  const rematchExpired = rematchWindowExpired;
   const viewerEmotes = game?.viewerSlot ? game.emotes[game.viewerSlot] : undefined;
   const recentEmoteCount = viewerEmotes?.sentAt.filter((sentAt) => now - sentAt < EMOTE_WINDOW_MS).length ?? 0;
   const emoteBlocked = Boolean(viewerEmotes?.blockedUntil && now < viewerEmotes.blockedUntil);
-  const emotesDisabled = emotePending !== null || emoteBlocked || recentEmoteCount >= EMOTE_LIMIT;
+  const emotesDisabled = rematchExpired || emotePending !== null || emoteBlocked || recentEmoteCount >= EMOTE_LIMIT;
   const viewerMissedTurns = game?.viewerSlot ? game.players[game.viewerSlot].missedTurns : 0;
   const opponentMissedTurns = opponentSlot && game ? game.players[opponentSlot].missedTurns : 0;
   const opponentConnectedAt = opponentSlot && game ? game.players[opponentSlot].connectedAt : 0;

@@ -639,6 +639,9 @@ export async function surrenderGame(gameIdValue: string) {
 
 export async function sendGameEmote(gameIdValue: string, emote: EmoteType) {
   const { session, game } = await getGame(gameIdValue);
+  if (game.status === "finished" && (!game.rematch || Date.now() >= game.rematch.expiresAt)) {
+    throw new Error("rematch_expired");
+  }
   const { sendEmote } = await import("@/lib/game/engine");
   sendEmote(game, session.id, emote);
 
