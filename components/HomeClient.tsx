@@ -335,17 +335,6 @@ export function HomeClient({ initialStats }: { initialStats: Stats }) {
                 </button>
               )}
             </div>
-            {turnstileSiteKey ? (
-              !turnstileVerified ? <div ref={turnstileContainerRef} className="turnstile-box" /> : null
-            ) : (
-              <div className="turnstile-box" aria-hidden="true">
-                <div className="mock-turnstile-widget">
-                  <span className="mock-turnstile-checkbox" />
-                  <span className="mock-turnstile-label">Mock verification</span>
-                  <span className="mock-turnstile-brand">Turnstile</span>
-                </div>
-              </div>
-            )}
             <div className="invite-row">
               <button className="button secondary" disabled={busy} onClick={createInvite}>
                 <DoorOpen size={18} />
@@ -431,6 +420,17 @@ export function HomeClient({ initialStats }: { initialStats: Stats }) {
               </div>
             </div>
           </div>
+          {turnstileSiteKey ? (
+            !turnstileVerified ? <div ref={turnstileContainerRef} className="turnstile-box" /> : null
+          ) : (
+            <div className="turnstile-box" aria-hidden="true">
+              <div className="mock-turnstile-widget">
+                <span className="mock-turnstile-checkbox" />
+                <span className="mock-turnstile-label">Mock verification</span>
+                <span className="mock-turnstile-brand">Turnstile</span>
+              </div>
+            </div>
+          )}
         </div>
       </section>
     </main>
