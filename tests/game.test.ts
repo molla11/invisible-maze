@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { advanceClock, createGame, heartbeat, sendEmote, submitSteps, surrender } from "@/lib/game/engine";
-import { directionsList, generateMaze, hasWall, movePoint, shortestPath } from "@/lib/game/maze";
+import { directionsList, generateMaze, hasWall, maxWallComponentDiameter, movePoint, shortestPath } from "@/lib/game/maze";
 import { COIN_TOSS_MS, EMOTE_BLOCK_MS, EMOTE_LIMIT, EMOTE_WINDOW_MS, MATCH_READY_MS, REMATCH_WINDOW_MS, START_COUNTDOWN_MS, TURN_SECONDS, goalFor, startFor, type Maze, type Point } from "@/lib/game/types";
+import mazePool from "@/lib/game/maze-pool.json";
 
 function reachableCellCount(maze: Maze, start: Point) {
   const queue = [start];
@@ -67,6 +68,20 @@ describe("maze generation", () => {
     }
 
     expect(hasEdgeCellWall).toBe(true);
+  });
+
+  it("keeps connected wall component diameters at most two", () => {
+    const longWallMaze: Maze = {
+      size: 8,
+      seed: 1,
+      walls: ["0,0:right", "0,1:right", "0,2:right"]
+    };
+
+    expect(maxWallComponentDiameter(longWallMaze)).toBe(3);
+
+    for (let seed = 0; seed < mazePool.count; seed += 1) {
+      expect(maxWallComponentDiameter(generateMaze(seed))).toBeLessThanOrEqual(2);
+    }
   });
 });
 

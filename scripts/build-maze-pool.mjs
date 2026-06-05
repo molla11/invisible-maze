@@ -3,6 +3,7 @@ import { dirname, resolve } from "node:path";
 
 const BOARD_SIZE = 8;
 const WALL_COUNT = 28;
+const MAX_WALL_COMPONENT_DIAMETER = 2;
 const TARGET_COUNT = Number(process.argv[2] ?? 2_000);
 const OUT_FILE = resolve(process.argv[3] ?? "lib/game/maze-pool.json");
 
@@ -85,6 +86,15 @@ function edgeKey(x, y, direction) {
   return `${x},${y}:${direction}`;
 }
 
+function endpointKey(point) {
+  return `${point.x},${point.y}`;
+}
+
+function wallEndpoints(x, y, direction) {
+  if (direction === "right") return [{ x: x + 1, y }, { x: x + 1, y: y + 1 }];
+  return [{ x, y: y + 1 }, { x: x + 1, y: y + 1 }];
+}
+
 function precomputeAllEdges() {
   const edges = [];
   let id = 0;
@@ -113,6 +123,7 @@ function makeEdge(id, x, y, direction) {
     y,
     direction,
     key: edgeKey(x, y, direction),
+    endpoints: wallEndpoints(x, y, direction),
     orientation: direction === "up" ? "H" : "V",
     outerCell: isOuterCell(x, y) || isOuterCell(to.x, to.y),
     a: pointId(x, y),
@@ -212,6 +223,7 @@ function generateBalancedRandomWalls(profile, rng) {
   for (const edge of shuffle(EDGES, rng)) {
     if (walls.size >= WALL_COUNT) break;
     if (sectorQuota[edge.sector] <= 0) continue;
+    if (!canAddWallWithinDiameter(walls, edge.id)) continue;
     if (edge.outerCell) {
       if (outerCellCount >= targetOuterCellWalls) continue;
     } else if (walls.size - outerCellCount >= WALL_COUNT - targetOuterCellWalls) {
@@ -233,10 +245,14 @@ function generateBalancedRandomWalls(profile, rng) {
   while (walls.size < WALL_COUNT) {
     const candidates = EDGES.filter((edge) => {
       if (walls.has(edge.id)) return false;
+      if (!canAddWallWithinDiameter(walls, edge.id)) return false;
       if (edge.outerCell) return outerCellCount < targetOuterCellWalls;
       return walls.size - outerCellCount < WALL_COUNT - targetOuterCellWalls;
     });
-    const edge = randomChoice(candidates.length > 0 ? candidates : EDGES.filter((candidate) => !walls.has(candidate.id)), rng);
+    const fallbackCandidates = EDGES.filter((candidate) => !walls.has(candidate.id) && canAddWallWithinDiameter(walls, candidate.id));
+    const candidatePool = candidates.length > 0 ? candidates : fallbackCandidates;
+    if (candidatePool.length === 0) break;
+    const edge = randomChoice(candidatePool, rng);
     walls.add(edge.id);
     if (edge.outerCell) outerCellCount += 1;
   }
@@ -332,6 +348,55 @@ function symmetryRatio(walls) {
   return mirrored / walls.size;
 }
 
+function maxWallComponentDiameter(walls) {
+  const edgeIdsByEndpoint = new Map();
+  for (const id of walls) {
+    for (const endpoint of EDGE_BY_ID.get(id).endpoints) {
+      const key = endpointKey(endpoint);
+      edgeIdsByEndpoint.set(key, [...(edgeIdsByEndpoint.get(key) ?? []), id]);
+    }
+  }
+
+  const seen = new Set();
+  let maxDiameter = 0;
+
+  for (const id of walls) {
+    if (seen.has(id)) continue;
+
+    const queue = [id];
+    seen.add(id);
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+
+    for (let head = 0; head < queue.length; head += 1) {
+      for (const endpoint of EDGE_BY_ID.get(queue[head]).endpoints) {
+        minX = Math.min(minX, endpoint.x);
+        minY = Math.min(minY, endpoint.y);
+        maxX = Math.max(maxX, endpoint.x);
+        maxY = Math.max(maxY, endpoint.y);
+
+        for (const next of edgeIdsByEndpoint.get(endpointKey(endpoint)) ?? []) {
+          if (seen.has(next)) continue;
+          seen.add(next);
+          queue.push(next);
+        }
+      }
+    }
+
+    maxDiameter = Math.max(maxDiameter, maxX - minX, maxY - minY);
+  }
+
+  return maxDiameter;
+}
+
+function canAddWallWithinDiameter(walls, edgeId) {
+  const next = new Set(walls);
+  next.add(edgeId);
+  return maxWallComponentDiameter(next) <= MAX_WALL_COMPONENT_DIAMETER;
+}
+
 function localDensityPenalty(walls) {
   return sectorCounts(walls).reduce((sum, count) => sum + Math.max(0, count - 3) ** 2, 0);
 }
@@ -352,6 +417,7 @@ function evaluateMaze(walls, profile = NORMAL_PROFILE) {
   const rowBands = countsBy(walls, "rowBand");
   const colBands = countsBy(walls, "colBand");
   const symmetry = symmetryRatio(walls);
+  const wallComponentDiameter = maxWallComponentDiameter(walls);
   const distributionScore = variance(sectors);
 
   return {
@@ -367,12 +433,13 @@ function evaluateMaze(walls, profile = NORMAL_PROFILE) {
     rowBandRange: range(rowBands),
     colBandRange: range(colBands),
     symmetryRatio: symmetry,
+    wallComponentDiameter,
     distributionScore,
     score: scoreMaze(walls, profile)
   };
 }
 
-function isEssentiallyValid(walls) {
+function isCoreMazeValid(walls) {
   if (walls.size !== WALL_COUNT) return false;
   const distanceA = bfsDistance(START_A, GOAL_A, walls);
   const distanceB = bfsDistance(START_B, GOAL_B, walls);
@@ -380,6 +447,10 @@ function isEssentiallyValid(walls) {
   if (distanceA !== distanceB) return false;
   if (!ALLOWED_PATH_LENGTHS.has(distanceA)) return false;
   return isAllCellsConnected(walls);
+}
+
+function isEssentiallyValid(walls) {
+  return isCoreMazeValid(walls) && maxWallComponentDiameter(walls) <= MAX_WALL_COMPONENT_DIAMETER;
 }
 
 function isAcceptableMaze(walls, profile) {
@@ -422,12 +493,14 @@ function scoreMaze(walls, profile) {
 
   const fairnessPenalty = Math.abs(distanceA - distanceB) * 100_000;
   const connectivityPenalty = isAllCellsConnected(walls) ? 0 : 1_000_000;
+  const wallComponentPenalty = Math.max(0, maxWallComponentDiameter(walls) - MAX_WALL_COMPONENT_DIAMETER) * 100_000;
   const targetPath = Math.floor((profile.minPathLength + profile.maxPathLength) / 2);
   const pathLengthPenalty = (Math.abs(distanceA - targetPath) + Math.abs(distanceB - targetPath)) * 20;
 
   return (
     fairnessPenalty +
     connectivityPenalty +
+    wallComponentPenalty +
     pathLengthPenalty +
     distributionPenalty(walls) * 10 +
     orientationPenalty(walls, profile) * 8 +
@@ -443,7 +516,8 @@ function randomWallSwap(edges, walls, rng) {
   const removedWall = randomChoice([...next], rng);
   next.delete(removedWall);
   const emptyEdges = edges.filter((edge) => !next.has(edge.id));
-  next.add(randomChoice(emptyEdges, rng).id);
+  const diameterSafeEdges = emptyEdges.filter((edge) => canAddWallWithinDiameter(next, edge.id));
+  next.add(randomChoice(diameterSafeEdges.length > 0 ? diameterSafeEdges : emptyEdges, rng).id);
   return next.size === WALL_COUNT ? next : null;
 }
 
@@ -491,7 +565,7 @@ function generateOneMaze(edges, profile, seed) {
     const walls = generateBalancedRandomWalls(profile, rng);
     const evaluation = evaluateMaze(walls, profile);
 
-    if (isEssentiallyValid(walls) && evaluation.score < bestScore) {
+    if (isCoreMazeValid(walls) && evaluation.score < bestScore) {
       bestScore = evaluation.score;
       bestMaze = { walls, evaluation };
     }
@@ -513,7 +587,7 @@ function generateFallbackFairMaze(edges, seed) {
 
   for (let attempt = 0; attempt < 2_000; attempt += 1) {
     let walls = generateBalancedRandomWalls(LOOSE_PROFILE, rng);
-    if (!isEssentiallyValid(walls)) continue;
+    if (!isCoreMazeValid(walls)) continue;
 
     const score = scoreMaze(walls, LOOSE_PROFILE) + symmetryRatio(walls) * 100;
     if (score < bestScore) {
@@ -521,10 +595,10 @@ function generateFallbackFairMaze(edges, seed) {
       bestScore = score;
     }
 
-    if (symmetryRatio(walls) <= 0.9) return { walls, evaluation: evaluateMaze(walls, LOOSE_PROFILE) };
+    if (isEssentiallyValid(walls) && symmetryRatio(walls) <= 0.9) return { walls, evaluation: evaluateMaze(walls, LOOSE_PROFILE) };
   }
 
-  if (best) return best;
+  if (best && isEssentiallyValid(best.walls)) return best;
   throw new Error(`No fair maze found for seed ${seed}`);
 }
 

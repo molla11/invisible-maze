@@ -59,6 +59,70 @@ export function shortestPath(maze: Maze, start: Point, goal: Point): number {
   return Number.POSITIVE_INFINITY;
 }
 
+function wallEndpoints(wall: string): [Point, Point] {
+  const [rawPoint, rawDirection] = wall.split(":");
+  const [x, y] = rawPoint.split(",").map(Number);
+  const direction = rawDirection as Direction;
+
+  if (direction === "right") return [{ x: x + 1, y }, { x: x + 1, y: y + 1 }];
+  if (direction === "left") return [{ x, y }, { x, y: y + 1 }];
+  if (direction === "up") return [{ x, y: y + 1 }, { x: x + 1, y: y + 1 }];
+  if (direction === "down") return [{ x, y }, { x: x + 1, y }];
+  throw new Error(`invalid_wall:${wall}`);
+}
+
+function pointKey(point: Point): string {
+  return `${point.x},${point.y}`;
+}
+
+export function maxWallComponentDiameter(maze: Maze): number {
+  const wallsByEndpoint = new Map<string, string[]>();
+  const endpointsByWall = new Map<string, [Point, Point]>();
+
+  for (const wall of maze.walls) {
+    const endpoints = wallEndpoints(wall);
+    endpointsByWall.set(wall, endpoints);
+    for (const endpoint of endpoints) {
+      const key = pointKey(endpoint);
+      wallsByEndpoint.set(key, [...(wallsByEndpoint.get(key) ?? []), wall]);
+    }
+  }
+
+  const seen = new Set<string>();
+  let maxDiameter = 0;
+
+  for (const wall of maze.walls) {
+    if (seen.has(wall)) continue;
+
+    const queue = [wall];
+    seen.add(wall);
+    let minX = Number.POSITIVE_INFINITY;
+    let minY = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    let maxY = Number.NEGATIVE_INFINITY;
+
+    for (let head = 0; head < queue.length; head += 1) {
+      const current = queue[head];
+      for (const endpoint of endpointsByWall.get(current) ?? []) {
+        minX = Math.min(minX, endpoint.x);
+        minY = Math.min(minY, endpoint.y);
+        maxX = Math.max(maxX, endpoint.x);
+        maxY = Math.max(maxY, endpoint.y);
+
+        for (const next of wallsByEndpoint.get(pointKey(endpoint)) ?? []) {
+          if (seen.has(next)) continue;
+          seen.add(next);
+          queue.push(next);
+        }
+      }
+    }
+
+    maxDiameter = Math.max(maxDiameter, maxX - minX, maxY - minY);
+  }
+
+  return maxDiameter;
+}
+
 function wallKeyFromEdgeId(edgeId: number): string {
   let current = 0;
   for (let y = 0; y < BOARD_SIZE; y += 1) {
