@@ -55,6 +55,12 @@ type DbGame = {
   state: GameState;
 };
 
+type DbStatsSnapshot = {
+  online: number;
+  waiting_in_queue: number;
+  active_games: number;
+};
+
 const globalForStore = globalThis as unknown as {
   invisibleMazeStore?: StoreState;
   invisibleMazeSupabase?: SupabaseClient;
@@ -225,6 +231,10 @@ function isMissingPresenceTable(error: { code?: string; message?: string }) {
   return error.code === "42P01" || Boolean(error.message?.includes("presence_connections"));
 }
 
+function isMissingStatsSnapshotFunction(error: { code?: string; message?: string }) {
+  return error.code === "42883" || error.code === "PGRST202" || Boolean(error.message?.includes("stats_snapshot"));
+}
+
 async function dbLoadRecentlySeenProfileIds(admin: SupabaseClient) {
   const { data, error } = await admin
     .from("profiles")
@@ -271,6 +281,24 @@ async function dbLoadActiveGameCount(admin: SupabaseClient, onlineProfileIds: Se
   if (error) throw new Error(error.message);
 
   return count ?? 0;
+}
+
+async function dbLoadStatsSnapshot(admin: SupabaseClient) {
+  const { data, error } = await admin
+    .rpc("stats_snapshot", { p_active_since: iso(Date.now() - presenceStaleMs) })
+    .single<DbStatsSnapshot>();
+
+  if (error) {
+    if (isMissingStatsSnapshotFunction(error)) return undefined;
+    throw new Error(error.message);
+  }
+
+  if (!data) return undefined;
+  return {
+    online: data.online,
+    waitingInQueue: data.waiting_in_queue,
+    activeGames: data.active_games
+  };
 }
 
 async function dbPruneStaleQueue(admin: SupabaseClient) {
@@ -374,6 +402,9 @@ function localOnlineSessionIds() {
 export async function publicStats() {
   const admin = supabaseAdmin();
   if (admin) {
+    const statsSnapshot = await dbLoadStatsSnapshot(admin);
+    if (statsSnapshot) return statsSnapshot;
+
     const [onlineProfileIds, { data: queuedProfiles, error: queueError }] = await Promise.all([
       dbLoadOnlineProfileIds(admin),
       admin.from("match_queue").select("profile_id")

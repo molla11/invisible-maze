@@ -288,7 +288,7 @@ export function GameClient({ gameId }: { gameId: string }) {
     async function measurePing() {
       const startedAt = performance.now();
       try {
-        const response = await fetch(`/api/game/${gameId}/heartbeat`, {
+        const response = await fetch("/api/ping", {
           method: "HEAD",
           cache: "no-store"
         });

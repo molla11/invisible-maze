@@ -48,7 +48,7 @@ export function HomeClient({ initialStats }: { initialStats: Stats }) {
 
   const refreshStats = useCallback(async () => {
     try {
-      const response = await fetch("/api/health", { cache: "no-store" });
+      const response = await fetch("/api/health");
       if (response.ok) setStats(await response.json());
     } catch {
       // Stats are best-effort presence UI; retry on the next tick.

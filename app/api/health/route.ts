@@ -4,5 +4,12 @@ import { publicStats } from "@/lib/server/store";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  return NextResponse.json({ ok: true, ...(await publicStats()) });
+  return NextResponse.json(
+    { ok: true, ...(await publicStats()) },
+    {
+      headers: {
+        "Cache-Control": "public, s-maxage=1, stale-while-revalidate=4"
+      }
+    }
+  );
 }
