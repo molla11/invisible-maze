@@ -22,6 +22,7 @@ import {
 import Link from "next/link";
 import type { CSSProperties } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { LanguageSwitch } from "@/components/LanguageSwitch";
 import {
   DISCONNECT_FORFEIT_MS,
   EMOTE_LIMIT,
@@ -34,7 +35,8 @@ import {
   type PlayerSlot,
   type Point
 } from "@/lib/game/types";
-import { ko } from "@/lib/i18n/ko";
+import { useI18n } from "@/lib/i18n/client";
+import type { Messages } from "@/lib/i18n";
 
 const DISCONNECT_WARNING_MS = 15_000;
 
@@ -134,27 +136,27 @@ function finishedWallClass(game: PublicGame, key: string) {
   return "unknown";
 }
 
-function eventText(event: GameEvent) {
-  const teamName = (slot: unknown) => (slot === "A" ? "Red" : slot === "B" ? "Blue" : String(slot));
-  if (event.type === "emote") return `${teamName(event.payload.player)} ${emoteLabel(event.payload.emote)}`;
-  if (event.type === "rematch_requested") return `${teamName(event.payload.player)} 다시 플레이 요청`;
-  if (event.type === "rematch_started") return "다시 플레이 시작";
-  if (event.type === "wall_hit") return `${teamName(event.payload.player)} 충돌`;
-  if (event.type === "move") return `${teamName(event.payload.player)} 이동`;
-  if (event.type === "turn_skipped") return `${teamName(event.payload.player)} 시간 초과`;
-  if (event.type === "surrender") return `${teamName(event.payload.loser)} 항복`;
-  if (event.type === "win") return `${teamName(event.payload.winner)} 승리`;
-  if (event.type === "coin_tossed") return `${teamName(event.payload.first)} 선공`;
+function eventText(event: GameEvent, t: Messages) {
+  const eventTeamName = (slot: unknown) => (slot === "A" || slot === "B" ? teamName(slot, t) : String(slot));
+  if (event.type === "emote") return `${eventTeamName(event.payload.player)} ${emoteLabel(event.payload.emote, t)}`;
+  if (event.type === "rematch_requested") return `${eventTeamName(event.payload.player)} ${t.rematchRequestedEvent}`;
+  if (event.type === "rematch_started") return t.rematchStartedEvent;
+  if (event.type === "wall_hit") return `${eventTeamName(event.payload.player)} ${t.collisionEvent}`;
+  if (event.type === "move") return `${eventTeamName(event.payload.player)} ${t.moveEvent}`;
+  if (event.type === "turn_skipped") return `${eventTeamName(event.payload.player)} ${t.turnSkippedEvent}`;
+  if (event.type === "surrender") return `${eventTeamName(event.payload.loser)} ${t.surrenderEvent}`;
+  if (event.type === "win") return `${eventTeamName(event.payload.winner)} ${t.winEvent}`;
+  if (event.type === "coin_tossed") return `${eventTeamName(event.payload.first)} ${t.firstMoveEvent}`;
   return event.type;
 }
 
-function emoteLabel(emote: unknown) {
-  if (emote === "hello") return "인사";
-  if (emote === "nice") return "좋아요";
-  if (emote === "oops") return "아차";
-  if (emote === "thinking") return "생각 중";
-  if (emote === "smile") return "웃음";
-  if (emote === "cry") return "울음";
+function emoteLabel(emote: unknown, t: Messages) {
+  if (emote === "hello") return t.emoteHello;
+  if (emote === "nice") return t.emoteNice;
+  if (emote === "oops") return t.emoteOops;
+  if (emote === "thinking") return t.emoteThinking;
+  if (emote === "smile") return t.emoteSmile;
+  if (emote === "cry") return t.emoteCry;
   return String(emote);
 }
 
@@ -168,28 +170,30 @@ function emoteEmoji(emote: unknown) {
   return "•";
 }
 
-function teamName(slot?: PlayerSlot) {
-  if (slot === "A") return "Red";
-  if (slot === "B") return "Blue";
+function teamName(slot: PlayerSlot | undefined, t: Messages) {
+  if (slot === "A") return t.teamRed;
+  if (slot === "B") return t.teamBlue;
   return "-";
 }
 
-function resultText(game: PublicGame) {
+function resultText(game: PublicGame, t: Messages) {
   if (game.status !== "finished") return "";
-  return game.winner === game.viewerSlot ? "게임 승리" : "게임 패배";
+  return game.winner === game.viewerSlot ? t.gameWin : t.gameLoss;
 }
 
 function isRematchWindowExpired(game: PublicGame | null, at: number) {
   return game?.status === "finished" && (!game.rematch || at >= game.rematch.expiresAt);
 }
 
-const emoteOptions: Array<{ emote: EmoteType; label: string; Icon: LucideIcon }> = [
-  { emote: "hello", label: "인사", Icon: Hand },
-  { emote: "nice", label: "좋아요", Icon: ThumbsUp },
-  { emote: "oops", label: "아차", Icon: CircleAlert },
-  { emote: "thinking", label: "생각 중", Icon: Brain },
-  { emote: "smile", label: "웃음", Icon: Smile },
-  { emote: "cry", label: "울음", Icon: Frown }
+type EmoteLabelKey = "emoteHello" | "emoteNice" | "emoteOops" | "emoteThinking" | "emoteSmile" | "emoteCry";
+
+const emoteOptions: Array<{ emote: EmoteType; labelKey: EmoteLabelKey; Icon: LucideIcon }> = [
+  { emote: "hello", labelKey: "emoteHello", Icon: Hand },
+  { emote: "nice", labelKey: "emoteNice", Icon: ThumbsUp },
+  { emote: "oops", labelKey: "emoteOops", Icon: CircleAlert },
+  { emote: "thinking", labelKey: "emoteThinking", Icon: Brain },
+  { emote: "smile", labelKey: "emoteSmile", Icon: Smile },
+  { emote: "cry", labelKey: "emoteCry", Icon: Frown }
 ];
 
 const directionIcons: Record<Direction, LucideIcon> = {
@@ -200,6 +204,7 @@ const directionIcons: Record<Direction, LucideIcon> = {
 };
 
 export function GameClient({ gameId }: { gameId: string }) {
+  const { locale, setLocale, t } = useI18n();
   const [game, setGame] = useState<PublicGame | null>(null);
   const [error, setError] = useState("");
   const [now, setNow] = useState(Date.now());
@@ -219,12 +224,12 @@ export function GameClient({ gameId }: { gameId: string }) {
 
   const showBoardEmote = useCallback((slot: PlayerSlot, point: Point, overlapped: boolean, emote: unknown) => {
     const id = crypto.randomUUID();
-    setBoardEmotes((current) => [...current, { id, slot, point, overlapped, label: emoteLabel(emote), emoji: emoteEmoji(emote) }]);
+    setBoardEmotes((current) => [...current, { id, slot, point, overlapped, label: emoteLabel(emote, t), emoji: emoteEmoji(emote) }]);
 
     window.setTimeout(() => {
       setBoardEmotes((current) => current.filter((item) => item.id !== id));
     }, 2400);
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     seenEventIds.current = null;
@@ -258,7 +263,7 @@ export function GameClient({ gameId }: { gameId: string }) {
     source.onmessage = (event) => {
       const data = JSON.parse(event.data) as PublicGame | { error: string };
       if ("error" in data && typeof data.error === "string") {
-        setError(data.error ?? "게임 상태를 불러오지 못했습니다.");
+        setError(data.error ?? t.gameLoadFailed);
         source.close();
         return;
       }
@@ -273,7 +278,7 @@ export function GameClient({ gameId }: { gameId: string }) {
       source.close();
       clearInterval(clock);
     };
-  }, [gameId, sessionReady]);
+  }, [gameId, sessionReady, t]);
 
   useEffect(() => {
     let cancelled = false;
@@ -317,8 +322,8 @@ export function GameClient({ gameId }: { gameId: string }) {
   const isMatchReady = Boolean(game && isCoinPhase && now < game.coinTossStartsAt);
   const coinRevealed = Boolean(game?.currentTurn);
   const startCountdown = Math.max(0, Math.ceil(((game?.gameStartsAt ?? now) - now) / 1000));
-  const coinPhaseText = coinRevealed ? `${teamName(game?.currentTurn)} 선공` : "선공 결정 중";
-  const viewerTeamText = game?.viewerSlot ? teamName(game.viewerSlot) : "-";
+  const coinPhaseText = coinRevealed ? `${teamName(game?.currentTurn, t)} ${t.firstMover}` : t.firstMoverDeciding;
+  const viewerTeamText = game?.viewerSlot ? teamName(game.viewerSlot, t) : "-";
   const viewerTeamClass = game?.viewerSlot?.toLowerCase() ?? "";
   const coinProgress = game
     ? isMatchReady
@@ -332,7 +337,7 @@ export function GameClient({ gameId }: { gameId: string }) {
       if (!canAct || !viewerPosition || actionPendingRef.current) return;
       const direction = directionTo(viewerPosition, point);
       if (!direction) {
-        setError("현재 위치와 맞닿은 칸만 선택할 수 있습니다.");
+        setError(t.adjacentOnly);
         return;
       }
 
@@ -347,13 +352,13 @@ export function GameClient({ gameId }: { gameId: string }) {
           setGame(data);
           setError("");
         } else {
-          setError(data.error === "out_of_bounds_move" ? "밖으로 움직일 수 없습니다." : data.error ?? "이동하지 못했습니다.");
+          setError(data.error === "out_of_bounds_move" ? t.outOfBounds : data.error ?? t.moveFailed);
         }
       } finally {
         actionPendingRef.current = false;
       }
     },
-    [canAct, gameId, viewerPosition]
+    [canAct, gameId, t, viewerPosition]
   );
 
   const startNewMatch = useCallback(async () => {
@@ -370,13 +375,13 @@ export function GameClient({ gameId }: { gameId: string }) {
     }
 
     if (data.error) {
-      setEndNotice("새 매칭을 시작하지 못했습니다.");
+      setEndNotice(t.newMatchFailed);
     } else {
       setEndNotice("");
       setEndQueued(true);
     }
     setMatchPending(false);
-  }, [matchPending]);
+  }, [matchPending, t]);
 
   const requestRematch = useCallback(async () => {
     if (rematchPending || game?.status !== "finished") return;
@@ -392,10 +397,10 @@ export function GameClient({ gameId }: { gameId: string }) {
       }
       setGame(data.game);
     } else {
-      setEndNotice(data.error ?? "다시 플레이를 요청하지 못했습니다.");
+      setEndNotice(data.error ?? t.rematchRequestFailed);
     }
     setRematchPending(false);
-  }, [game?.status, gameId, rematchPending]);
+  }, [game?.status, gameId, rematchPending, t]);
 
   const cancelEndMatch = useCallback(async () => {
     if (matchPending) return;
@@ -403,16 +408,16 @@ export function GameClient({ gameId }: { gameId: string }) {
     const response = await fetch("/api/match/cancel", { method: "POST" });
     if (response.ok) {
       setEndQueued(false);
-      setEndNotice("매칭을 취소했습니다.");
+      setEndNotice(t.matchCanceled);
     } else {
-      setEndNotice("매칭을 취소하지 못했습니다.");
+      setEndNotice(t.matchCancelFailed);
     }
     setMatchPending(false);
-  }, [matchPending]);
+  }, [matchPending, t]);
 
   const surrenderGame = useCallback(async () => {
     if (actionPendingRef.current || game?.status === "finished") return;
-    if (!confirm("항복하시겠습니까?")) return;
+    if (!confirm(t.surrenderConfirm)) return;
 
     actionPendingRef.current = true;
     try {
@@ -422,12 +427,12 @@ export function GameClient({ gameId }: { gameId: string }) {
         setGame(data);
         setError("");
       } else {
-        setError(data.error ?? "항복하지 못했습니다.");
+        setError(data.error ?? t.surrenderFailed);
       }
     } finally {
       actionPendingRef.current = false;
     }
-  }, [game?.status, gameId]);
+  }, [game?.status, gameId, t]);
 
   const sendEmote = useCallback(
     async (emote: EmoteType) => {
@@ -442,14 +447,14 @@ export function GameClient({ gameId }: { gameId: string }) {
         setGame(data);
       } else {
         if (data.error === "emote_blocked") {
-          setError("잠시 기다려 주세요.");
+          setError(t.waitMoment);
         } else {
-          setError(data.error ?? "감정 표현을 보내지 못했습니다.");
+          setError(data.error ?? t.emoteSendFailed);
         }
       }
       setEmotePending(null);
     },
-    [emotePending, game, gameId]
+    [emotePending, game, gameId, t]
   );
 
   useEffect(() => {
@@ -531,12 +536,12 @@ export function GameClient({ gameId }: { gameId: string }) {
     opponentDisconnectedFor > DISCONNECT_WARNING_MS &&
     opponentDisconnectedFor < DISCONNECT_FORFEIT_MS;
   const statusNotice =
-    error || (isWaitingPhase ? "상대가 게임 화면에 들어오면 시작합니다." : isCoinPhase ? (coinRevealed ? "게임 시작을 준비하세요." : "선공을 결정하고 있습니다.") : "");
+    error || (isWaitingPhase ? t.waitingForOpponentScreen : isCoinPhase ? (coinRevealed ? t.prepareGameStart : t.decidingFirstMover) : "");
 
   if (!game) {
     return (
       <main className="shell">
-        <div className="entry-panel">게임을 불러오는 중입니다.</div>
+        <div className="entry-panel">{t.gameLoading}</div>
       </main>
     );
   }
@@ -548,19 +553,20 @@ export function GameClient({ gameId }: { gameId: string }) {
           <span className="brand-mark">
             <Swords size={18} />
           </span>
-          {ko.appName}
+          {t.appName}
         </Link>
+        <LanguageSwitch currentLabel={t.languageCurrent} label={t.languageToggleLabel} locale={locale} onChange={setLocale} />
       </nav>
 
       <section className="game-shell">
         <div className="game-panel">
           <div className="board-wrap">
-            <div className="board-meta" aria-label="미로 정보">
+            <div className="board-meta" aria-label={t.mazeInfo}>
               <span>
-                최단 경로 <strong>{game.mazeStats.shortestPath}</strong>
+                {t.shortestPath} <strong>{game.mazeStats.shortestPath}</strong>
               </span>
             </div>
-            <div className="board" aria-label="Invisible Maze board">
+            <div className="board" aria-label={t.boardLabel}>
               {Array.from({ length: 64 }, (_, index) => {
                 const x = index % 8;
                 const y = 7 - Math.floor(index / 8);
@@ -588,7 +594,7 @@ export function GameClient({ gameId }: { gameId: string }) {
               {(["A", "B"] as PlayerSlot[]).map((slot) =>
                 samePoint(game.players[slot].position, game.players[slot].goal) ? null : (
                   <div
-                    aria-label={`${slot} 목표`}
+                    aria-label={`${slot} ${t.goalLabel}`}
                     className={`goal ${slot.toLowerCase()}`}
                     key={`goal-${slot}`}
                     style={toBoard(game.players[slot].goal)}
@@ -606,19 +612,19 @@ export function GameClient({ gameId }: { gameId: string }) {
 
               {(["A", "B"] as PlayerSlot[]).map((slot) => (
                 <div
-                  aria-label={`${slot} 플레이어`}
+                  aria-label={`${slot} ${t.playerLabel}`}
                   className={`piece ${slot.toLowerCase()}`}
                   key={slot}
                   style={pieceStyle(game.players[slot].position, slot, playersOverlap)}
                 >
                   <ChessPawn className="pawn-mark" size={42} strokeWidth={2.35} aria-hidden="true" />
-                  {slot === game.viewerSlot ? <span className="me-label">me</span> : null}
+                  {slot === game.viewerSlot ? <span className="me-label">{t.me}</span> : null}
                 </div>
               ))}
 
               {boardEmotes.map((item) => (
                 <div
-                  aria-label={`${teamName(item.slot)} 감정 표현: ${item.label}`}
+                  aria-label={`${teamName(item.slot, t)} ${t.emoteA11y}: ${item.label}`}
                   className={`board-emote-burst ${item.slot.toLowerCase()}`}
                   key={item.id}
                   style={pieceStyle(item.point, item.slot, item.overlapped)}
@@ -637,9 +643,9 @@ export function GameClient({ gameId }: { gameId: string }) {
                   <div className="coin-card" style={coinCardStyle}>
                     {isMatchReady ? (
                       <>
-                        <span className="coin-kicker">매칭 완료</span>
-                        <span className="opponent-label">상대: Guest</span>
-                        <span className={`viewer-team ${viewerTeamClass}`}>내 팀: {viewerTeamText}</span>
+                        <span className="coin-kicker">{t.matchComplete}</span>
+                        <span className="opponent-label">{t.opponent}: Guest</span>
+                        <span className={`viewer-team ${viewerTeamClass}`}>{t.myTeam}: {viewerTeamText}</span>
                       </>
                     ) : (
                       <>
@@ -647,7 +653,7 @@ export function GameClient({ gameId }: { gameId: string }) {
                           {coinRevealed ? startCountdown : ""}
                         </div>
                         <strong>{coinPhaseText}</strong>
-                        <span className={`viewer-team ${viewerTeamClass}`}>내 팀: {viewerTeamText}</span>
+                        <span className={`viewer-team ${viewerTeamClass}`}>{t.myTeam}: {viewerTeamText}</span>
                       </>
                     )}
                     <div className="coin-progress" aria-hidden="true">
@@ -671,24 +677,24 @@ export function GameClient({ gameId }: { gameId: string }) {
                       <RotateCcw size={22} />
                       <span>
                         {rematchExpired
-                          ? "다시 플레이 만료"
+                          ? t.rematchExpired
                           : rematchPending
-                            ? "요청 중"
+                            ? t.requesting
                             : rematchRequested && opponentRematchRequested
-                              ? "다시 플레이 시작 중"
+                              ? t.rematchStarting
                               : opponentRematchRequested
-                                ? "상대의 요청 도착"
+                                ? t.opponentRequestArrived
                                 : rematchRequested
-                                  ? "상대 응답 대기 중"
-                                  : "다시 플레이"}
+                                  ? t.waitingOpponentResponse
+                                  : t.rematch}
                       </span>
                     </button>
                     <span className="end-action-subtext">
                       {rematchExpired
-                        ? "새로운 게임 참가를 이용하세요"
+                        ? t.useNewMatch
                         : opponentRematchRequested && !rematchRequested
-                          ? `수락하시겠습니까? · ${rematchSecondsLeft}초 남음`
-                          : `${rematchSecondsLeft}초 남음`}
+                          ? `${t.acceptPrompt} · ${rematchSecondsLeft}${t.secondsLeftSuffix}`
+                          : `${rematchSecondsLeft}${t.secondsLeftSuffix}`}
                     </span>
                   </div>
                   {endQueued ? (
@@ -696,7 +702,7 @@ export function GameClient({ gameId }: { gameId: string }) {
                       <div className="match-control is-queueing">
                         <button className="button primary-action match-status" disabled type="button">
                           <Radar size={22} />
-                          <span>매칭 중</span>
+                          <span>{t.matching}</span>
                           <span className="queue-dots" aria-hidden="true">
                             <span />
                             <span />
@@ -704,7 +710,7 @@ export function GameClient({ gameId }: { gameId: string }) {
                           </span>
                         </button>
                         <button className="button match-cancel" disabled={matchPending} onClick={cancelEndMatch} type="button">
-                          매칭 취소
+                          {t.cancelMatch}
                         </button>
                       </div>
                     </div>
@@ -712,7 +718,7 @@ export function GameClient({ gameId }: { gameId: string }) {
                     <div className="new-match-group">
                       <button className="button primary-action" disabled={matchPending} onClick={startNewMatch} type="button">
                         <Radar size={22} />
-                        <span>{matchPending ? "매칭 대기 중" : "새로운 게임 참가"}</span>
+                        <span>{matchPending ? t.queueWaiting : t.newGameJoin}</span>
                       </button>
                     </div>
                   )}
@@ -727,10 +733,6 @@ export function GameClient({ gameId }: { gameId: string }) {
           <div className="opponent-profile">
             <User className="opponent-icon" size={30} aria-hidden="true" />
             <strong>Guest</strong>
-            {/* <div className="opponent-meta" aria-label="상대 프로필 정보">
-              <span>전적</span>
-              <span>-</span>
-            </div> */}
           </div>
 
           <div
@@ -746,17 +748,17 @@ export function GameClient({ gameId }: { gameId: string }) {
                     : "blue"
             }`}
           >
-            <span>{game.status === "finished" ? resultText(game) : isWaitingPhase ? "입장 대기" : isCoinPhase ? coinPhaseText : teamName(game.currentTurn)}</span>
-            <strong>{game.status === "finished" ? "게임 종료" : isWaitingPhase ? "상대 입장 대기" : isCoinPhase ? "동전 던지기" : canAct ? "움직일 차례" : "상대 차례"}</strong>
+            <span>{game.status === "finished" ? resultText(game, t) : isWaitingPhase ? t.waitingEntry : isCoinPhase ? coinPhaseText : teamName(game.currentTurn, t)}</span>
+            <strong>{game.status === "finished" ? t.gameEnded : isWaitingPhase ? t.waitingOpponentEntry : isCoinPhase ? t.coinToss : canAct ? t.moveTurn : t.opponentTurn}</strong>
           </div>
 
           <div className="round-stats">
             <div>
-              <span>남은 이동</span>
+              <span>{t.stepsLeft}</span>
               <strong>{game.status === "playing" ? stepsLeft : 0}</strong>
             </div>
             <div>
-              <span>남은 시간</span>
+              <span>{t.timeLeft}</span>
               <strong>{game.status === "playing" ? secondsLeft : isCoinPhase && coinRevealed ? startCountdown : 0}</strong>
             </div>
             <div>
@@ -766,23 +768,23 @@ export function GameClient({ gameId }: { gameId: string }) {
           </div>
 
           {game.status === "playing" ? (
-            <div className="risk-panel" aria-label="패배 조건 상태">
+            <div className="risk-panel" aria-label={t.defeatStatus}>
               <div>
-                <span>내 시간초과</span>
+                <span>{t.myTimeouts}</span>
                 <strong>{viewerMissedTurns}/3</strong>
               </div>
               <div>
-                <span>상대 시간초과</span>
+                <span>{t.opponentTimeouts}</span>
                 <strong>{opponentMissedTurns}/3</strong>
               </div>
-              <p>시간 초과 3번 시 패배합니다.</p>
+              <p>{t.timeoutLossNote}</p>
             </div>
           ) : null}
 
           {opponentDisconnected ? (
             <div className="disconnect-alert" role="status">
-              <strong>상대 연결이 끊겼습니다.</strong>
-              <span>{opponentDisconnectSecondsLeft}초 안에 돌아오지 않으면 자동 승리합니다.</span>
+              <strong>{t.opponentDisconnectedTitle}</strong>
+              <span>{opponentDisconnectSecondsLeft}{t.opponentDisconnectWin}</span>
             </div>
           ) : null}
 
@@ -790,26 +792,26 @@ export function GameClient({ gameId }: { gameId: string }) {
 
           {game.status !== "finished" ? (
             <button className="button danger full-width" onClick={surrenderGame} type="button">
-              항복
+              {t.surrender}
             </button>
           ) : null}
 
-          <div className="emote-panel" aria-label="감정 표현">
+          <div className="emote-panel" aria-label={t.emotes}>
             <div className="emote-header">
-              <strong>감정 표현</strong>
+              <strong>{t.emotes}</strong>
             </div>
-            {emoteOptions.map(({ emote, label, Icon }) => (
+            {emoteOptions.map(({ emote, labelKey, Icon }) => (
               <button className="emote-button" disabled={emotesDisabled} key={emote} onClick={() => sendEmote(emote)} type="button">
                 <Icon size={18} />
-                <span>{label}</span>
+                <span>{t[labelKey]}</span>
               </button>
             ))}
           </div>
 
           <div className="log">
-            <strong>기록</strong>
+            <strong>{t.log}</strong>
             {recentEvents.map((item) => (
-              <span key={item.id}>{eventText(item)}</span>
+              <span key={item.id}>{eventText(item, t)}</span>
             ))}
           </div>
 

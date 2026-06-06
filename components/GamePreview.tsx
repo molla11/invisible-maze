@@ -3,6 +3,7 @@
 import { ChessPawn, Crown } from "lucide-react";
 import type { CSSProperties } from "react";
 import { useEffect, useState } from "react";
+import { useI18n } from "@/lib/i18n/client";
 
 const BOARD_SIZE = 8;
 const STEP_MS = 920;
@@ -138,10 +139,6 @@ function wallKey(point: Point, direction: Direction): string {
   return `${point.x},${point.y}:${direction}`;
 }
 
-function teamName(slot: PlayerSlot) {
-  return slot === "A" ? "Red" : "Blue";
-}
-
 function sleep(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
@@ -152,6 +149,7 @@ function emoteFor(slot: PlayerSlot, hit: boolean) {
 }
 
 export function GamePreview() {
+  const { t } = useI18n();
   const [preview, setPreview] = useState<PreviewState>({
     positions: { A: starts.A, B: starts.B },
     activeSlot: "A",
@@ -254,13 +252,14 @@ export function GamePreview() {
   }, []);
 
   const activeTone = preview.activeSlot === "A" ? "red" : "blue";
-  const previewStateText = preview.hitWall ? "벽 충돌" : `남은 이동 ${preview.stepsLeft}`;
+  const activeTeamName = preview.activeSlot === "A" ? t.teamRed : t.teamBlue;
+  const previewStateText = preview.hitWall ? t.wallHit : `${t.stepsLeft} ${preview.stepsLeft}`;
 
   return (
-    <section className="preview-panel" aria-label="게임 플레이 미리보기">
+    <section className="preview-panel" aria-label={t.previewLabel}>
       <div className="preview-topline">
         <div className={`preview-status-pill ${activeTone}`} aria-live="polite">
-          <span className="preview-turn">{teamName(preview.activeSlot)} 턴</span>
+          <span className="preview-turn">{`${activeTeamName} ${t.turnSuffix}`}</span>
           <span className="preview-status-divider" aria-hidden="true" />
           <span className="preview-state">{previewStateText}</span>
         </div>

@@ -4,7 +4,8 @@ import { BookOpen, Copy, DoorOpen, Eye, EyeOff, Radar, Swords } from "lucide-rea
 import Script from "next/script";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { GamePreview } from "@/components/GamePreview";
-import { ko } from "@/lib/i18n/ko";
+import { LanguageSwitch } from "@/components/LanguageSwitch";
+import { useI18n } from "@/lib/i18n/client";
 
 declare global {
   interface Window {
@@ -45,6 +46,7 @@ export function HomeClient({ initialStats }: { initialStats: Stats }) {
   const turnstileWidgetRef = useRef<string | undefined>(undefined);
   const rulesTooltipRef = useRef<HTMLDivElement | null>(null);
   const actionInFlight = useRef(false);
+  const { locale, setLocale, t } = useI18n();
 
   const refreshStats = useCallback(async () => {
     try {
@@ -74,7 +76,7 @@ export function HomeClient({ initialStats }: { initialStats: Stats }) {
   function verifiedBody() {
     if (!turnstileSiteKey || turnstileVerified) return JSON.stringify({});
     if (!turnstileToken) {
-      setNotice("보안 확인을 완료해 주세요.");
+      setNotice(t.securityRequired);
       throw new Error("turnstile_token_required");
     }
     return JSON.stringify({ turnstileToken });
@@ -158,7 +160,7 @@ export function HomeClient({ initialStats }: { initialStats: Stats }) {
     setCode("");
     setInviteCodeCreated(false);
     setCodeMasked(false);
-    setNotice("매칭 대기 중입니다.");
+    setNotice(t.queueStarting);
     try {
       const response = await fetch("/api/match/join", {
         method: "POST",
@@ -167,7 +169,7 @@ export function HomeClient({ initialStats }: { initialStats: Stats }) {
       });
       const data = await response.json();
       if (!response.ok) {
-        setNotice(data.error === "turnstile_failed" ? "보안 확인에 실패했습니다." : "매칭을 시작하지 못했습니다.");
+        setNotice(data.error === "turnstile_failed" ? t.securityFailed : t.matchStartFailed);
         if (data.error === "turnstile_failed") resetTurnstile();
         return;
       }
@@ -177,11 +179,11 @@ export function HomeClient({ initialStats }: { initialStats: Stats }) {
         location.href = `/game/${data.gameId}`;
         return;
       }
-      setNotice(ko.queueWaiting);
+      setNotice(t.queueWaiting);
       setQueued(true);
     } catch (error) {
       if (error instanceof Error && error.message === "turnstile_token_required") return;
-      setNotice("매칭을 시작하지 못했습니다.");
+      setNotice(t.matchStartFailed);
     } finally {
       setBusy(false);
       actionInFlight.current = false;
@@ -196,12 +198,12 @@ export function HomeClient({ initialStats }: { initialStats: Stats }) {
       const response = await fetch("/api/match/cancel", { method: "POST" });
       if (response.ok) {
         setQueued(false);
-        setNotice("매칭을 취소했습니다.");
+        setNotice(t.matchCanceled);
       } else {
-        setNotice("매칭을 취소하지 못했습니다.");
+        setNotice(t.matchCancelFailed);
       }
     } catch {
-      setNotice("매칭을 취소하지 못했습니다.");
+      setNotice(t.matchCancelFailed);
     } finally {
       setBusy(false);
       actionInFlight.current = false;
@@ -223,7 +225,7 @@ export function HomeClient({ initialStats }: { initialStats: Stats }) {
       });
       const data = await response.json();
       if (!response.ok) {
-        setNotice(data.error === "turnstile_failed" ? "보안 확인에 실패했습니다." : "방을 만들지 못했습니다.");
+        setNotice(data.error === "turnstile_failed" ? t.securityFailed : t.roomCreateFailed);
         if (data.error === "turnstile_failed") resetTurnstile();
         return;
       }
@@ -233,13 +235,13 @@ export function HomeClient({ initialStats }: { initialStats: Stats }) {
         setCode(data.code);
         setInviteCodeCreated(true);
         setCodeMasked(true);
-        setNotice("초대 코드가 생성되었습니다.");
+        setNotice(t.inviteCreated);
       } else {
-        setNotice("방을 만들지 못했습니다.");
+        setNotice(t.roomCreateFailed);
       }
     } catch (error) {
       if (error instanceof Error && error.message === "turnstile_token_required") return;
-      setNotice("방을 만들지 못했습니다.");
+      setNotice(t.roomCreateFailed);
     } finally {
       setBusy(false);
       actionInFlight.current = false;
@@ -250,9 +252,9 @@ export function HomeClient({ initialStats }: { initialStats: Stats }) {
     if (!code.trim()) return;
     try {
       await navigator.clipboard.writeText(code.trim().toUpperCase());
-      setNotice("초대 코드를 복사했습니다.");
+      setNotice(t.inviteCopied);
     } catch {
-      setNotice("초대 코드를 복사하지 못했습니다.");
+      setNotice(t.inviteCopyFailed);
     }
   }
 
@@ -281,15 +283,15 @@ export function HomeClient({ initialStats }: { initialStats: Stats }) {
       }
       setNotice(
         data.error === "turnstile_failed"
-          ? "보안 확인에 실패했습니다."
+          ? t.securityFailed
           : data.error === "room_not_found"
-            ? "방 코드를 찾지 못했습니다."
-            : "입장할 수 없는 방입니다."
+            ? t.roomNotFound
+            : t.roomJoinFailed
       );
       if (data.error === "turnstile_failed") resetTurnstile();
     } catch (error) {
       if (error instanceof Error && error.message === "turnstile_token_required") return;
-      setNotice("입장할 수 없는 방입니다.");
+      setNotice(t.roomJoinFailed);
     } finally {
       setBusy(false);
       actionInFlight.current = false;
@@ -312,18 +314,19 @@ export function HomeClient({ initialStats }: { initialStats: Stats }) {
           <span className="brand-mark">
             <Swords size={18} />
           </span>
-          {ko.appName}
+          {t.appName}
         </div>
+        <LanguageSwitch currentLabel={t.languageCurrent} label={t.languageToggleLabel} locale={locale} onChange={setLocale} />
       </nav>
 
       <section className="hero">
         <GamePreview />
         <div className="entry-column">
           <div className="entry-panel">
-            <section className="entry-hero" aria-label="게임 소개">
-              <span>route finding game in 8 x 8 maze</span>
-              <h1>Invisible Maze</h1>
-              <p>보이지 않는 미로에서 먼저 길을 찾으세요.</p>
+            <section className="entry-hero" aria-label={t.gameIntroLabel}>
+              <span>{t.heroEyebrow}</span>
+              <h1>{t.heroTitle}</h1>
+              <p>{t.heroDescription}</p>
             </section>
             <div className="actions">
               <div className="match-wrapper">
@@ -331,7 +334,7 @@ export function HomeClient({ initialStats }: { initialStats: Stats }) {
                   <div className="match-control is-queueing">
                     <button className="button primary-action match-status" disabled type="button">
                       <Radar size={22} />
-                      <span>매칭 중</span>
+                      <span>{t.matching}</span>
                       <span className="queue-dots" aria-hidden="true">
                         <span />
                         <span />
@@ -339,27 +342,27 @@ export function HomeClient({ initialStats }: { initialStats: Stats }) {
                       </span>
                     </button>
                     <button className="button match-cancel" disabled={busy} onClick={cancelMatch} type="button">
-                      매칭 취소
+                      {t.cancelMatch}
                     </button>
                   </div>
                 ) : (
                   <button className="button primary-action" disabled={busy} onClick={autoMatch}>
                     <Radar size={22} />
-                    <span>{ko.autoMatch}</span>
+                    <span>{t.autoMatch}</span>
                   </button>
                 )}
               </div>
               <div className="invite-row">
                 <button className="button secondary" disabled={busy} onClick={createInvite}>
                   <DoorOpen size={18} />
-                  {ko.createRoom}
+                  {t.createRoom}
                 </button>
                 <div className="input-row">
                   <div className="code-field">
                     <input
                       className="input"
                       maxLength={5}
-                      placeholder={ko.roomCode}
+                      placeholder={t.roomCode}
                       readOnly={inviteCodeCreated}
                       value={displayedCode}
                       onChange={(event) => {
@@ -370,10 +373,10 @@ export function HomeClient({ initialStats }: { initialStats: Stats }) {
                     />
                     {inviteCodeCreated ? (
                       <button
-                        aria-label={codeMasked ? "초대 코드 보기" : "초대 코드 숨기기"}
+                        aria-label={codeMasked ? t.showInviteCode : t.hideInviteCode}
                         className="code-visibility-button"
                         onClick={() => setCodeMasked((masked) => !masked)}
-                        title={codeMasked ? "초대 코드 보기" : "초대 코드 숨기기"}
+                        title={codeMasked ? t.showInviteCode : t.hideInviteCode}
                         type="button"
                       >
                         {codeMasked ? <Eye size={18} /> : <EyeOff size={18} />}
@@ -381,14 +384,14 @@ export function HomeClient({ initialStats }: { initialStats: Stats }) {
                     ) : null}
                   </div>
                   <button
-                    aria-label={inviteCodeCreated ? "초대 코드 복사" : undefined}
+                    aria-label={inviteCodeCreated ? t.copyInviteCode : undefined}
                     className={`button ${inviteCodeCreated ? "icon-action" : ""}`}
                     disabled={busy || !code.trim()}
                     onClick={inviteCodeCreated ? copyInviteCode : joinInvite}
-                    title={inviteCodeCreated ? "초대 코드 복사" : undefined}
+                    title={inviteCodeCreated ? t.copyInviteCode : undefined}
                     type="button"
                   >
-                    {inviteCodeCreated ? <Copy size={18} /> : ko.joinRoom}
+                    {inviteCodeCreated ? <Copy size={18} /> : t.joinRoom}
                   </button>
                 </div>
               </div>
@@ -404,32 +407,31 @@ export function HomeClient({ initialStats }: { initialStats: Stats }) {
                   type="button"
                 >
                   <BookOpen size={17} />
-                  <span>Rule</span>
+                  <span>{t.rules}</span>
                 </button>
                 {rulesOpen ? (
                   <div className="rule-tooltip" id="rules-tooltip" role="tooltip">
-                    <strong className="rule-tooltip-title">게임 룰</strong>
+                    <strong className="rule-tooltip-title">{t.rulesTitle}</strong>
                     <ul className="rule-tooltip-list">
-                      <li>상대보다 먼저 반대편 목표 칸에 도착하면 승리합니다.</li>
-                      <li>자기 턴마다 최대 3칸까지 이동할 수 있습니다.</li>
-                      <li>숨겨진 벽에 닿으면 그 벽이 공개되고 출발점으로 돌아갑니다.</li>
-                      <li>공개된 벽은 다시 보이지 않게 되니 미로를 잘 기억하세요.</li>
+                      {t.rulesList.map((rule) => (
+                        <li key={rule}>{rule}</li>
+                      ))}
                     </ul>
-                    <p className="rule-tooltip-footnote">시간 초과 3회, 이탈, 항복은 패배로 처리됩니다.</p>
+                    <p className="rule-tooltip-footnote">{t.rulesFootnote}</p>
                   </div>
                 ) : null}
               </div>
-              <div className="compact-stats" aria-label="서비스 상태">
+              <div className="compact-stats" aria-label={t.serviceStatus}>
                 <div>
-                  <span>접속자</span>
+                  <span>{t.onlineUsers}</span>
                   <strong>{stats.online}</strong>
                 </div>
                 <div>
-                  <span>매칭 중</span>
+                  <span>{t.waitingQueue}</span>
                   <strong>{stats.waitingInQueue}</strong>
                 </div>
                 <div>
-                  <span>진행 중인 게임</span>
+                  <span>{t.activeGames}</span>
                   <strong>{stats.activeGames}</strong>
                 </div>
               </div>
@@ -441,7 +443,7 @@ export function HomeClient({ initialStats }: { initialStats: Stats }) {
             <div className="turnstile-box" aria-hidden="true">
               <div className="mock-turnstile-widget">
                 <span className="mock-turnstile-checkbox" />
-                <span className="mock-turnstile-label">Mock verification</span>
+                <span className="mock-turnstile-label">{t.mockVerification}</span>
                 <span className="mock-turnstile-brand">Turnstile</span>
               </div>
             </div>
